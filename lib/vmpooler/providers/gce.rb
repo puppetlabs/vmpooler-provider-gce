@@ -70,8 +70,6 @@ module Vmpooler
         end
 
         #Base methods that are implemented:
-        #
-        #
 
         def vms_in_pool(pool_name)
           vms = []
@@ -127,6 +125,10 @@ module Vmpooler
             vm_hash = generate_vm_hash(vm_object, pool_name)
           end
           vm_hash
+        rescue ::Google::Apis::ClientError => e
+          raise e unless e.status_code == 404
+          #swallow the ClientError error 404 and return nil when the VM was not found
+          nil
         end
 
         # inputs
@@ -182,17 +184,41 @@ module Vmpooler
           nil
         end
 
-        #TODO
         def create_disk(pool_name, vm_name, disk_size)
           pool = pool_config(pool_name)
           raise("Pool #{pool_name} does not exist for the provider #{name}") if pool.nil?
 
           @connection_pool.with_metrics do |pool_object|
             connection = ensured_gce_connection(pool_object)
-            vm_object = find_vm(pool_name, vm_name, connection)
-            raise("VM #{vm_name} in pool #{pool_name} does not exist for the provider #{name}") if vm_object.nil?
+            begin
+              vm_object = connection.get_instance(project, zone(pool_name), vm_name)
+            rescue ::Google::Apis::ClientError => e
+              raise e unless e.status_code == 404
+              #if it does not exist
+              raise("VM #{vm_name} in pool #{pool_name} does not exist for the provider #{name}")
+            end
+            # this number should start at 1 when there is only the boot disk,
+            # eg the new disk will be named spicy-proton-disk1
+            number_disk = vm_object.disks.length()
 
-            #TODO part 2
+            disk_name = "#{vm_name}-disk#{number_disk}"
+            disk = Google::Apis::ComputeV1::Disk.new(
+              :name => disk_name,
+              :size_gb => disk_size,
+              :labels => {"pool" => pool_name, "vm" => vm_name}
+            )
+            result = connection.insert_disk(project, zone(pool_name), disk)
+            wait_for_operation(project, pool_name, result, connection)
+            new_disk = connection.get_disk(project, zone(pool_name), disk_name)
+
+            attached_disk = Google::Apis::ComputeV1::AttachedDisk.new(
+              :auto_delete => true,
+              :boot => false,
+              :source => new_disk.self_link
+            )
+            result = connection.attach_disk(project, zone(pool_name), vm_object.name, attached_disk)
+            wait_for_operation(project, pool_name, result, connection)
+            true
           end
           true
         end
@@ -200,32 +226,45 @@ module Vmpooler
         def create_snapshot(pool_name, vm_name, new_snapshot_name)
           @connection_pool.with_metrics do |pool_object|
             connection = ensured_gce_connection(pool_object)
-            vm_object = find_vm(pool_name, vm_name, connection)
-            raise("VM #{vm_name} in pool #{pool_name} does not exist for the provider #{name}") if vm_object.nil?
+            begin
+              vm_object = connection.get_instance(project, zone(pool_name), vm_name)
+            rescue ::Google::Apis::ClientError => e
+              raise e unless e.status_code == 404
+              #if it does not exist
+              raise("VM #{vm_name} in pool #{pool_name} does not exist for the provider #{name}")
+            end
 
-            old_snap = find_snapshot(vm_object, new_snapshot_name)
+            old_snap = find_snapshot(vm_name, new_snapshot_name, connection)
             raise("Snapshot #{new_snapshot_name} for VM #{vm_name} in pool #{pool_name} already exists for the provider #{name}") unless old_snap.nil?
 
-            snapshot_obj = ::Google::Apis::ComputeV1::Snapshot.new(name: "#{new_snapshot_name}_boot", labels: {"snapshot_name" => new_snapshot_name, "vm" => vm_name})
-            boot_disk = vm_object.disks[0]
-            result = connection.create_disk_snapshot(project, zone(pool_name), boot_disk, snapshot_obj)
-            wait_for_operation(project, pool_name, result, connection)
-            #TODO snapshot other disks if there are any
+            filter = "(labels.vm = #{vm_name})"
+            disk_list = connection.list_disks(project, zone(pool_name), filter: filter)
+            result_list = []
+            disk_list.items.each do |disk|
+              snapshot_obj = ::Google::Apis::ComputeV1::Snapshot.new(
+                name: "#{new_snapshot_name}-#{disk.name}",
+                labels: {"snapshot_name" => new_snapshot_name, "vm" => vm_name}
+              )
+              result = connection.create_disk_snapshot(project, zone(pool_name), disk.name, snapshot_obj)
+              # do them all async, keep a list, check later
+              result_list << result
+            end
+            #now check they are done
+            result_list.each do |result|
+              wait_for_operation(project, pool_name, result, connection)
+            end
           end
           true
-        rescue ::Google::Apis::ClientError => e
-          raise e unless e.status_code == 404
-          nil
         end
 
         #TODO
         def revert_snapshot(pool_name, vm_name, snapshot_name)
           @connection_pool.with_metrics do |pool_object|
             connection = ensured_gce_connection(pool_object)
-            vm_object = find_vm(pool_name, vm_name, connection)
+            vm_object = connection.get_instance(project, zone(pool_name), vm_name)
             raise("VM #{vm_name} in pool #{pool_name} does not exist for the provider #{name}") if vm_object.nil?
 
-            snapshot_object = find_snapshot(vm_object, snapshot_name)
+            snapshot_object = find_snapshot(vm_object,name, snapshot_name, connection)
             raise("Snapshot #{snapshot_name} for VM #{vm_name} in pool #{pool_name} does not exist for the provider #{name}") if snapshot_object.nil?
 
             #TODO part 2
@@ -236,23 +275,16 @@ module Vmpooler
         def destroy_vm(pool_name, vm_name)
           @connection_pool.with_metrics do |pool_object|
             connection = ensured_gce_connection(pool_object)
-            vm_object = find_vm(pool_name, vm_name, connection)
-            # If a VM doesn't exist then it is effectively deleted
-            return true if vm_object.nil?
+            vm_object = connection.get_instance(project, zone(pool_name), vm_name)
 
-            start = Time.now
-
-            result = connection.delete_instance(project, @options[:vm_zone], name)
-            wait_for_operation(project, pool_name, result, connection)
-
-            finish = format('%<time>.2f', time: Time.now - start)
-            logger.log('s', "[-] [#{pool}] '#{vm_name}' destroyed in #{finish} seconds")
-            metrics.timing("destroy.#{pool}", finish)
+            result = connection.delete_instance(project, zone(pool_name), vm_name)
+            wait_for_operation(project, pool_name, result, connection, 10)
           end
           true
         rescue ::Google::Apis::ClientError => e
           raise e unless e.status_code == 404
-          nil
+          # If a VM doesn't exist then it is effectively deleted
+          true
         end
 
         def vm_ready?(_pool_name, vm_name)
@@ -277,13 +309,19 @@ module Vmpooler
         # END BASE METHODS
 
         # Compute resource wait for operation to be DONE (synchronous operation)
-        def wait_for_operation(project, pool_name, result, connection)
-          retries = 5
-          while result.status != 'DONE' && retries > 0
-            retries = retries - 1
+        def wait_for_operation(project, pool_name, result, connection, retries=5)
+          while result.status != 'DONE'
+            #logger.log('d',"#{Time.now} (#{retries}) #{result.status}")
             result = connection.wait_zone_operation(project, zone(pool_name), result.name)
           end
           result
+        rescue Google::Apis::TransmissionError => e
+          # each retry typically about 1 minute.
+          if retries > 0
+            retries = retries - 1
+            retry
+          end
+          raise
         end
 
         # Return a hash of VM data
@@ -324,7 +362,7 @@ module Vmpooler
 
             metrics.increment('connect.open')
             compute
-          rescue StandardError => e
+          rescue StandardError => e #is that even a thing?
             metrics.increment('connect.fail')
             raise e if try >= max_tries
 
@@ -348,8 +386,15 @@ module Vmpooler
           end
         end
 
-        def find_snapshot(vm, snapshotname)
-          #TODO
+        def find_snapshot(vm, snapshotname, connection)
+          filter = "(labels.vm = #{vm}) AND (labels.snapshot_name = #{snapshotname})"
+          snapshot_list = connection.list_snapshots(project,filter: filter)
+          return snapshot_list.items #array of snapshot objects
+        end
+
+        #all gce resource names to be RFC1035 compliant
+        def safe_name(name)
+          name =~ /[a-z]([-a-z0-9]*[a-z0-9])?/
         end
       end
     end
