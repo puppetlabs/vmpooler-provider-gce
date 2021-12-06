@@ -95,7 +95,7 @@
 #     (optional)
 #
 #   - template
-#     The template or virtual machine target to spawn clones from.
+#     The template or virtual machine target to spawn clones from. eg projects/debian-cloud/global/images/family/debian-9
 #     (required)
 #
 #   - size
