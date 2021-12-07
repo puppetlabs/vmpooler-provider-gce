@@ -71,6 +71,15 @@ module Vmpooler
 
         #Base methods that are implemented:
 
+        # vms_in_pool lists all the VM names in a pool, which is based on the VMs
+        # having a label "pool" that match a pool config name.
+        # inputs
+        #   [String] pool_name : Name of the pool
+        # returns
+        #   empty array [] if no VMs found in the pool
+        #   [Array]
+        #     [Hashtable]
+        #       [String] name : the name of the VM instance (unique for whole project)
         def vms_in_pool(pool_name)
           vms = []
           pool = pool_config(pool_name)
@@ -105,29 +114,37 @@ module Vmpooler
         #    [Time]   boottime   : Time when the VM was created/booted
         #    [String] status     : One of the following values: PROVISIONING, STAGING, RUNNING, STOPPING, SUSPENDING, SUSPENDED, REPAIRING, and TERMINATED
         #    [String] zone       : URL of the zone where the instance resides.
-        #  [String] machine_type : Full or partial URL of the machine type resource to use for this instance, in the format: zones/zone/machineTypes/machine-type.
+        #    [String] machine_type : Full or partial URL of the machine type resource to use for this instance, in the format: zones/zone/machineTypes/machine-type.
         def get_vm(pool_name, vm_name)
           vm_hash = nil
           @connection_pool.with_metrics do |pool_object|
             connection = ensured_gce_connection(pool_object)
-            vm_object = connection.get_instance(project, zone(pool_name), vm_name)
+            begin
+              vm_object = connection.get_instance(project, zone(pool_name), vm_name)
+            rescue ::Google::Apis::ClientError => e
+              raise e unless e.status_code == 404
+              #swallow the ClientError error 404 and return nil when the VM was not found
+              return nil
+            end
+
             return vm_hash if vm_object.nil?
 
             vm_hash = generate_vm_hash(vm_object, pool_name)
           end
           vm_hash
-        rescue ::Google::Apis::ClientError => e
-          raise e unless e.status_code == 404
-          #swallow the ClientError error 404 and return nil when the VM was not found
-          nil
         end
 
+        # create_vm creates a new VM with a default network from the config,
+        # a initial disk named #{new_vmname}-disk0 that uses the 'template' as its source image
+        # and labels added for vm and pool
+        # and an instance configuration for machine_type from the config and
+        # labels vm and pool
+        # having a label "pool" that match a pool config name.
         # inputs
         #   [String] pool       : Name of the pool
         #   [String] new_vmname : Name to give the new VM
         # returns
-        #   [Hashtable] of the VM as per get_vm
-        #   Raises RuntimeError if the pool_name is not supported by the Provider
+        #   [Hashtable] of the VM as per get_vm(pool_name, vm_name)
         def create_vm(pool_name, new_vmname)
           pool = pool_config(pool_name)
           raise("Pool #{pool_name} does not exist for the provider #{name}") if pool.nil?
@@ -139,7 +156,8 @@ module Vmpooler
           )
           initParams = {
             :source_image => pool['template'], #The source image to create this disk.
-            :labels => {'vm' => new_vmname, 'pool' => pool_name}
+            :labels => {'vm' => new_vmname, 'pool' => pool_name},
+            :disk_name => "#{new_vmname}-disk0"
           }
           disk = Google::Apis::ComputeV1::AttachedDisk.new(
             :auto_delete => true,
@@ -154,23 +172,30 @@ module Vmpooler
               :machine_type => pool['machine_type'],
               :disks => [disk],
               :network_interfaces => [network_interfaces],
-              :labels => {'pool' => pool_name}
+              :labels => {'vm' => new_vmname, 'pool' => pool_name}
             )
             result = connection.insert_instance(project, zone(pool_name), client)
             result = wait_for_operation(project, pool_name, result, connection)
-            if result.error
-              error_message = ""
-              # array of errors, combine them all
-              result.error.each do |error|
-                error_message = "#{error_message} #{error.code}:#{error.message}"
-              end
-              raise "Pool #{pool_name} operation: #{result.description} failed with error: #{error_message}"
-            end
             vm_hash = get_vm(pool_name, new_vmname)
           end
           vm_hash
         end
 
+        # create_disk creates an additional disk for an existing VM. It will name the new
+        # disk #{vm_name}-disk#{number_disk} where number_disk is the next logical disk number
+        # starting with 1 when adding an additional disk to a VM with only the boot disk:
+        # #{vm_name}-disk0 == boot disk
+        # #{vm_name}-disk1 == additional disk added via create_disk
+        # #{vm_name}-disk2 == additional disk added via create_disk if run a second time etc
+        # the new disk has labels added for vm and pool
+        # The GCE lifecycle is to create a new disk (lives independently of the instance) then to attach
+        # it to the existing instance.
+        # inputs
+        #   [String] pool_name  : Name of the pool
+        #   [String] vm_name    : Name of the existing VM
+        #   [String] disk_size  : The new disk size in GB
+        # returns
+        #   [boolean] true : once the operations are finished
         def create_disk(pool_name, vm_name, disk_size)
           pool = pool_config(pool_name)
           raise("Pool #{pool_name} does not exist for the provider #{name}") if pool.nil?
@@ -205,15 +230,25 @@ module Vmpooler
             )
             result = connection.attach_disk(project, zone(pool_name), vm_object.name, attached_disk)
             wait_for_operation(project, pool_name, result, connection)
-            true
           end
           true
         end
 
-        # for one vm, there could be multiple snapshots, one for each drive.
+        # create_snapshot creates new snapshots with the unique name {new_snapshot_name}-#{disk.name}
+        # for one vm, and one create_snapshot() there could be multiple snapshots created, one for each drive.
         # since the snapshot resource needs a unique name in the gce project,
         # we create a unique name by concatenating {new_snapshot_name}-#{disk.name}
-        # the disk name is based on vm_name which is already unique.
+        # the disk name is based on vm_name which makes it unique.
+        # The snapshot is added labels snapshot_name, vm, pool, diskname and boot
+        # inputs
+        #   [String] pool_name  : Name of the pool
+        #   [String] vm_name    : Name of the existing VM
+        #   [String] new_snapshot_name : a unique name for this snapshot, which would be used to refer to it when reverting
+        # returns
+        #   [boolean] true : once the operations are finished
+        # raises
+        #   RuntimeError if the vm_name cannot be found
+        #   RuntimeError if the snapshot_name already exists for this VM
         def create_snapshot(pool_name, vm_name, new_snapshot_name)
           @connection_pool.with_metrics do |pool_object|
             connection = ensured_gce_connection(pool_object)
@@ -233,7 +268,13 @@ module Vmpooler
               disk_name = disk_name_from_source(attached_disk)
               snapshot_obj = ::Google::Apis::ComputeV1::Snapshot.new(
                 name: "#{new_snapshot_name}-#{disk_name}",
-                labels: {"snapshot_name" => new_snapshot_name, "vm" => vm_name}
+                labels: {
+                  "snapshot_name" => new_snapshot_name,
+                  "vm" => vm_name,
+                  "pool" => pool_name,
+                  "diskname" => disk_name,
+                  "boot" => attached_disk.boot.to_s
+                }
               )
               result = connection.create_disk_snapshot(project, zone(pool_name), disk_name, snapshot_obj)
               # do them all async, keep a list, check later
@@ -247,9 +288,23 @@ module Vmpooler
           true
         end
 
-        # reverting in gce entails shutting down the VM,
-        # detaching and deleting the drives,
-        # creating new ones from the snapshot
+        # revert_snapshot reverts an existing VM's disks to an existing snapshot_name
+        # reverting in gce entails
+        # 1. shutting down the VM,
+        # 2. detaching and deleting the drives,
+        # 3. creating new disks with the same name from the snapshot for each disk
+        # for one vm, there might be multiple snapshots in time. We select the ones referred to by the
+        # snapshot_name, but that may be multiple snapshots, one for each disks
+        # The new disk is added labels vm and pool
+        # inputs
+        #   [String] pool_name  : Name of the pool
+        #   [String] vm_name    : Name of the existing VM
+        #   [String] snapshot_name : Name of an existing snapshot
+        # returns
+        #   [boolean] true : once the operations are finished
+        # raises
+        #   RuntimeError if the vm_name cannot be found
+        #   RuntimeError if the snapshot_name already exists for this VM
         def revert_snapshot(pool_name, vm_name, snapshot_name)
           @connection_pool.with_metrics do |pool_object|
             connection = ensured_gce_connection(pool_object)
@@ -268,31 +323,37 @@ module Vmpooler
             result = connection.stop_instance(project, zone(pool_name), vm_name)
             wait_for_operation(project, pool_name, result, connection)
 
-            raise("No disk is currently attached to VM #{vm_name} in pool #{pool_name}, cannot revert snapshot") if vm_object.disks.nil?
+            # Delete existing disks
+            if vm_object.disks
+              vm_object.disks.each do |attached_disk|
+                result = connection.detach_disk(project, zone(pool_name), vm_name, attached_disk.device_name)
+                wait_for_operation(project, pool_name, result, connection)
+                current_disk_name = disk_name_from_source(attached_disk)
+                result = connection.delete_disk(project, zone(pool_name), current_disk_name)
+                wait_for_operation(project, pool_name, result, connection)
+              end
+            end
+
             # this block is sensitive to disruptions, for example if vmpooler is stopped while this is running
-            vm_object.disks.each do |attached_disk|
-              result = connection.detach_disk(project, zone(pool_name), vm_name, attached_disk.device_name)
-              wait_for_operation(project, pool_name, result, connection)
-              current_disk_name = disk_name_from_source(attached_disk)
-              result = connection.delete_disk(project, zone(pool_name), current_disk_name)
-              wait_for_operation(project, pool_name, result, connection)
-
-              snapshot_resource_name = "#{snapshot_name}-#{current_disk_name}"
-              snapshot = connection.get_snapshot(project,snapshot_resource_name)
-
+            snapshot_object.each do |snapshot|
+              current_disk_name = snapshot.labels['diskname']
+              bootable = (snapshot.labels['boot'] == "true")
               disk = Google::Apis::ComputeV1::Disk.new(
                 :name => current_disk_name,
                 :labels => {"pool" => pool_name, "vm" => vm_name},
                 :source_snapshot => snapshot.self_link
               )
+              # create disk in GCE as a separate resource
               result = connection.insert_disk(project, zone(pool_name), disk)
               wait_for_operation(project, pool_name, result, connection)
-              new_disk = connection.get_disk(project, zone(pool_name), current_disk_name)
+              # read the new disk info
+              new_disk_info = connection.get_disk(project, zone(pool_name), current_disk_name)
               new_attached_disk = Google::Apis::ComputeV1::AttachedDisk.new(
                 :auto_delete => true,
-                :boot => attached_disk.boot,
-                :source => new_disk.self_link
+                :boot => bootable,
+                :source => new_disk_info.self_link
               )
+              # attach the new disk to existing instance
               result = connection.attach_disk(project, zone(pool_name), vm_name, new_attached_disk)
               wait_for_operation(project, pool_name, result, connection)
             end
@@ -303,8 +364,13 @@ module Vmpooler
           true
         end
 
-        # deletes the instance and any disks and snapshots via the labels
+        # destroy_vm deletes an existing VM instance and any disks and snapshots via the labels
         # in gce instances, disks and snapshots are resources that can exist independent of each other
+        # inputs
+        #   [String] pool_name  : Name of the pool
+        #   [String] vm_name    : Name of the existing VM
+        # returns
+        #   [boolean] true : once the operations are finished
         def destroy_vm(pool_name, vm_name)
           @connection_pool.with_metrics do |pool_object|
             connection = ensured_gce_connection(pool_object)
@@ -399,6 +465,14 @@ module Vmpooler
         def wait_for_operation(project, pool_name, result, connection, retries=5)
           while result.status != 'DONE'
             result = connection.wait_zone_operation(project, zone(pool_name), result.name)
+          end
+          if result.error # unsure what kind of error can be stored here
+            error_message = ""
+            # array of errors, combine them all
+            result.error.each do |error|
+              error_message = "#{error_message} #{error.code}:#{error.message}"
+            end
+            raise "Pool #{pool_name} operation: #{result.description} failed with error: #{error_message}"
           end
           result
         rescue Google::Apis::TransmissionError => e

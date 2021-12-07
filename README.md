@@ -20,9 +20,9 @@ This provider adds labels to all resources that are managed
 
 |resource|labels|note|
 |---|---|---|
-|instance|pool=$pool_name|for example pool=pool1|
+|instance|vm=$vm_name, pool=$pool_name|for example vm=foo-bar, pool=pool1|
 |disk|vm=$vm_name, pool=$pool_name|for example vm=foo-bar and pool=pool1|
-|snapshot|snapshot_name=$snapshot_name, vm=$vm_name| for example snapshot_name=snap1, vm=foo-bar|
+|snapshot|snapshot_name=$snapshot_name, vm=$vm_name, pool=$pool_name| for example snapshot_name=snap1, vm=foo-bar, pool=pool1|
 
 Also see the usage of vmpooler's optional purge_unconfigured_resources, which is used to delete any resource found that
 do not have the pool label, and can be configured to allow a specific list of unconfigured pool names. 
