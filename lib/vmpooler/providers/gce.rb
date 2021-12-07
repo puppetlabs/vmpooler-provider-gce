@@ -444,18 +444,44 @@ module Vmpooler
               filter[zone(pool)] = [] if filter[zone(pool)].nil?
               filter[zone(pool)] << "(labels.pool != #{pool} OR -labels.pool:*)"
             end
-            vm_to_purge = []
             filter.keys.each do |zone|
+              #VMs
               instance_list = connection.list_instances(project, zone, filter: filter[zone].join(" AND "))
-              next if instance_list.items.nil?
 
-              instance_list.items.each do |vm|
-                next if !vm.labels.nil? && whitelist&.include?(vm.labels['pool'])
-                next if whitelist&.include?("") && vm.labels.nil?
-                vm_to_purge << vm.name
+              result_list = []
+              unless instance_list.items.nil?
+                instance_list.items.each do |vm|
+                  next if !vm.labels.nil? && whitelist&.include?(vm.labels['pool'])
+                  next if whitelist&.include?("") && vm.labels.nil?
+                  result = connection.delete_instance(project, zone, vm.name)
+                  result_list << result
+                end
+              end
+              #now check they are done
+              result_list.each do |result|
+                wait_for_operation(project, pool_name, result, connection)
+              end
+
+              #Disks
+              disks_list = connection.list_disks(project, zone, filter: filter[zone].join(" AND "))
+              unless disks_list.items.nil?
+                disks_list.items.each do |disk|
+                  next if !disk.labels.nil? && whitelist&.include?(disk.labels['pool'])
+                  next if whitelist&.include?("") && disk.labels.nil?
+                  result = connection.delete_disk(project, zone, disk.name)
+                end
+              end
+
+              #Snapshots
+              snapshot_list = connection.list_snapshots(project, filter: filter[zone].join(" AND "))
+              unless snapshot_list.items.nil?
+                snapshot_list.items.each do |sn|
+                  next if !sn.labels.nil? && whitelist&.include?(sn.labels['pool'])
+                  next if whitelist&.include?("") && sn.labels.nil?
+                  result = connection.delete_snapshot(project, sn.name)
+                end
               end
             end
-            puts vm_to_purge
           end
         end
 

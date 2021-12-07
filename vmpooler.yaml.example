@@ -13,14 +13,8 @@
 #     (optional: will default to it's parent :key: name eg. 'gce')
 #
 #   - purge_unconfigured_resources
-#     Enable purging of VMs (folders or resources) detected
-#     vSphere: within the base folder path that are not configured for the provider.
-#     Only a single layer of folders and their child VMs are evaluated from detected base folder paths
-#     Nested child folders will not be destroyed.
-#     A base folder path for 'vmpooler/redhat-7' would be 'vmpooler'
-#
-#     gce: in the project but without a pool label, or a pool label for an nonexistant pool
-#
+#     Enable purging of VMs detected
+#     For GCE: by default any VM in the project but without a "pool" label, or a "pool" label with the value for an unconfigured pool
 #     An optional allowlist can be provided to ignore purging certain folders or pool labels
 #
 #     Setting this on the provider will enable purging for the provider
@@ -28,12 +22,11 @@
 #     (optional; default: false)
 #
 #   - recources_allowlist
-#     vSphere: Specify folders that are within the base folder path, not in the configuration, and should not be destroyed
-#     To exclude 'vmpooler/myfolder' from being destroyed when the base path is 'vmpooler' you would specify 'myfolder' in the allowlist
-#     gce: Specify pool labels that should be ignored when purging VMs, for pools that are not configured. For example if the pool label is
-#     set to 'donotdelete' and there is no pool with that name configured, adding that value to the allowlist would not purge the VM.
+#     For GCE: Specify pool labels that should be ignored when purging VMs, for pools that are not configured. For example if the label is
+#     set to 'pool=donotdelete' and there is no pool with that name configured, adding "donotdelete" to the allowlist would not purge the VM.
+#     adding "" (empty string) to the allowlist has a special meaning whereas VMs that do not have the "pool" label are also not purged.
 #     This option is only evaluated when 'purge_unconfigured_folders' is enabled
-#     Expects an array of strings specifying the allowlisted folders by name
+#     Expects an array of strings specifying the allowlisted labels by name
 #     (optional; default: nil)
 #
 # If you want to support more than one provider with different parameters (server, username or passwords) you have to specify the
