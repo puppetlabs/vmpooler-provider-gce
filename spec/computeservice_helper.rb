@@ -48,6 +48,12 @@ MockDisk = Struct.new(
   keyword_init: true
 )
 
+MockSnapshotList = Struct.new(
+  #https://googleapis.dev/ruby/google-api-client/latest/Google/Apis/ComputeV1/DiskList.html
+  :id, :items, :kind, :next_page_token, :self_link, :warning,
+  keyword_init: true
+)
+
 MockSnapshot = Struct.new(
   #https://googleapis.dev/ruby/google-api-client/latest/Google/Apis/ComputeV1/Snapshot.html
   :auto_created, :chain_name, :creation_timestamp, :description, :disk_size_gb, :download_bytes, :id, :kind,

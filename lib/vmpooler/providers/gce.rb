@@ -435,49 +435,51 @@ module Vmpooler
 
         # Scans zones that are configured for list of resources (VM, disks, snapshots) that do not have the label.pool set
         # to one of the configured pools. If it is also not in the allowlist, the resource is destroyed
-        def purge_unconfigured_folders(base_folders, configured_folders, whitelist)
+        def purge_unconfigured_resources(allowlist)
           @connection_pool.with_metrics do |pool_object|
             connection = ensured_gce_connection(pool_object)
             pools_array = provided_pools
             filter = {}
+            # we have to group things by zone, because the API search feature is done against a zone and not global
+            # so we will do the searches in each configured zone
             pools_array.each do |pool|
               filter[zone(pool)] = [] if filter[zone(pool)].nil?
-              filter[zone(pool)] << "(labels.pool != #{pool} OR -labels.pool:*)"
+              filter[zone(pool)] << "(labels.pool != #{pool})"
             end
             filter.keys.each do |zone|
+              # this filter should return any item that have a labels.pool that is not in the config OR
+              # do not have a pool label at all
+              filter_string = filter[zone].join(" AND ") + " OR -labels.pool:*"
               #VMs
-              instance_list = connection.list_instances(project, zone, filter: filter[zone].join(" AND "))
+              instance_list = connection.list_instances(project, zone, filter: filter_string)
 
               result_list = []
               unless instance_list.items.nil?
                 instance_list.items.each do |vm|
-                  next if !vm.labels.nil? && whitelist&.include?(vm.labels['pool'])
-                  next if whitelist&.include?("") && vm.labels.nil?
+                  next if should_be_ignored(vm, allowlist)
                   result = connection.delete_instance(project, zone, vm.name)
                   result_list << result
                 end
               end
               #now check they are done
               result_list.each do |result|
-                wait_for_operation(project, pool_name, result, connection)
+                wait_for_zone_operation(project, zone, result, connection)
               end
 
               #Disks
-              disks_list = connection.list_disks(project, zone, filter: filter[zone].join(" AND "))
+              disks_list = connection.list_disks(project, zone, filter: filter_string)
               unless disks_list.items.nil?
                 disks_list.items.each do |disk|
-                  next if !disk.labels.nil? && whitelist&.include?(disk.labels['pool'])
-                  next if whitelist&.include?("") && disk.labels.nil?
+                  next if should_be_ignored(disk, allowlist)
                   result = connection.delete_disk(project, zone, disk.name)
                 end
               end
 
               #Snapshots
-              snapshot_list = connection.list_snapshots(project, filter: filter[zone].join(" AND "))
+              snapshot_list = connection.list_snapshots(project, filter: filter_string)
               unless snapshot_list.items.nil?
                 snapshot_list.items.each do |sn|
-                  next if !sn.labels.nil? && whitelist&.include?(sn.labels['pool'])
-                  next if whitelist&.include?("") && sn.labels.nil?
+                  next if should_be_ignored(sn, allowlist)
                   result = connection.delete_snapshot(project, sn.name)
                 end
               end
@@ -485,12 +487,17 @@ module Vmpooler
           end
         end
 
+        def should_be_ignored(item, allowlist)
+          (!item.labels.nil? && allowlist&.include?(item.labels['pool'])) ||
+            (allowlist&.include?("") && !item.labels&.keys&.include?('pool'))
+        end
+
         # END BASE METHODS
 
         # Compute resource wait for operation to be DONE (synchronous operation)
-        def wait_for_operation(project, pool_name, result, connection, retries=5)
+        def wait_for_zone_operation(project, zone, result, connection, retries=5)
           while result.status != 'DONE'
-            result = connection.wait_zone_operation(project, zone(pool_name), result.name)
+            result = connection.wait_zone_operation(project, zone, result.name)
           end
           if result.error # unsure what kind of error can be stored here
             error_message = ""
@@ -498,7 +505,7 @@ module Vmpooler
             result.error.each do |error|
               error_message = "#{error_message} #{error.code}:#{error.message}"
             end
-            raise "Pool #{pool_name} operation: #{result.description} failed with error: #{error_message}"
+            raise "Operation: #{result.description} failed with error: #{error_message}"
           end
           result
         rescue Google::Apis::TransmissionError => e
@@ -513,6 +520,10 @@ module Vmpooler
           # if the operation is not found, and we are 'waiting' on it, it might be because it
           # is already finished
           puts "waited on #{result.name} but was not found, so skipping"
+        end
+
+        def wait_for_operation(project, pool_name, result, connection, retries=5)
+          wait_for_zone_operation(project, zone(pool_name), result, connection, retries)
         end
 
         # Return a hash of VM data

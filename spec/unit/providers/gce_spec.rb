@@ -59,15 +59,18 @@ EOT
 
   describe '#manual tests live' do
     skip 'runs in gce' do
+=begin
       puts "creating"
       result = subject.create_vm(poolname, vmname)
+      puts "create snapshot w/ one disk"
+      result = subject.create_snapshot(poolname, vmname, "sams")
       puts "create disk"
       result = subject.create_disk(poolname, vmname, 10)
-      puts "create snapshot"
-      result = subject.create_snapshot(poolname, vmname, "sams")
+      puts "create snapshot w/ 2 disks"
       result = subject.create_snapshot(poolname, vmname, "sams2")
+=end
       puts "revert snapshot"
-      result = subject.revert_snapshot(poolname, vmname, "sams2")
+      result = subject.revert_snapshot(poolname, vmname, "sams")
       #result = subject.destroy_vm(poolname, vmname)
     end
 
@@ -80,7 +83,7 @@ EOT
 
     skip 'debug' do
 
-      puts subject.purge_unconfigured_folders(nil, nil, ['foo', '', 'blah'])
+      puts subject.purge_unconfigured_resources(['foo', '', 'blah'])
     end
   end
 
@@ -242,7 +245,7 @@ EOT
       end
 
       it 'should raise an error' do
-        expect{ subject.create_vm(poolname, vmname) }.to raise_error(Google::Apis::ClientError, /The resource .+ was not found/)
+        expect{ subject.create_vm(poolname, vmname) }.to raise_error(Google::Apis::ClientError)
       end
     end
 
@@ -280,9 +283,13 @@ EOT
     context 'Given a missing VM name' do
       before(:each) do
         allow(connection).to receive(:get_instance).and_raise(create_google_client_error(404,"The resource 'projects/#{project}/zones/#{zone}/instances/#{vmname}' was not found"))
+        disk_list = MockDiskList.new(items: nil)
+        allow(connection).to receive(:list_disks).and_return(disk_list)
+        allow(subject).to receive(:find_all_snapshots).and_return(nil)
       end
 
       it 'should return true' do
+        expect(connection.should_receive(:delete_instance).never)
         expect(subject.destroy_vm(poolname, 'missing_vm')).to be true
       end
     end
@@ -541,13 +548,12 @@ EOT
         attached_disk = MockAttachedDisk.new(device_name: vmname, source: "foo/bar/baz/#{vmname}")
         instance = MockInstance.new(name: vmname, disks: [attached_disk])
         allow(connection).to receive(:get_instance).and_return(instance)
-        snapshots = [MockSnapshot.new(name: snapshot_name, self_link: "foo/bar/baz/snapshot/#{snapshot_name}")]
+        snapshots = [MockSnapshot.new(name: snapshot_name, self_link: "foo/bar/baz/snapshot/#{snapshot_name}", labels: {"diskname" => vmname})]
         allow(subject).to receive(:find_snapshot).and_return(snapshots)
         allow(connection).to receive(:stop_instance)
         allow(subject).to receive(:wait_for_operation)
         allow(connection).to receive(:detach_disk)
         allow(connection).to receive(:delete_disk)
-        allow(connection).to receive(:get_snapshot).and_return(snapshots[0])
         new_disk = MockDisk.new(name: vmname, self_link: "foo/bar/baz/disk/#{vmname}")
         allow(connection).to receive(:insert_disk)
         allow(connection).to receive(:get_disk).and_return(new_disk)
@@ -561,55 +567,146 @@ EOT
     end
   end
 
-  #TODO: below are todo
-  describe '#purge_unconfigured_folders' do
-    let(:folder_title) { 'folder1' }
-    let(:base_folder) { 'dc1/vm/base' }
-    let(:folder_object) { mock_RbVmomi_VIM_Folder({ :name => base_folder }) }
-    let(:child_folder) { mock_RbVmomi_VIM_Folder({ :name => folder_title }) }
-    let(:whitelist) { nil }
-    let(:base_folders) { [ base_folder ] }
-    let(:configured_folders) { { folder_title => base_folder } }
-    let(:folder_children) { [ folder_title => child_folder ] }
+  describe '#purge_unconfigured_resources' do
     let(:empty_list) { [] }
 
     before(:each) do
       allow(subject).to receive(:connect_to_gce).and_return(connection)
     end
 
-    context 'with an empty folder' do
-      skip 'should not attempt to destroy any folders' do
-        expect(subject).to receive(:get_folder_children).with(base_folder, connection).and_return(empty_list)
-        expect(subject).to_not receive(:destroy_folder_and_children)
-
-        subject.purge_unconfigured_folders(base_folders, configured_folders, whitelist)
-      end
-    end
-
-    skip 'should retrieve the folder children' do
-      expect(subject).to receive(:get_folder_children).with(base_folder, connection).and_return(folder_children)
-      allow(subject).to receive(:folder_configured?).and_return(true)
-
-      subject.purge_unconfigured_folders(base_folders, configured_folders, whitelist)
-    end
-
-    context 'with a folder that is not configured' do
+    context 'with empty allowlist' do
       before(:each) do
-        expect(subject).to receive(:get_folder_children).with(base_folder, connection).and_return(folder_children)
-        allow(subject).to receive(:folder_configured?).and_return(false)
+        allow(subject).to receive(:wait_for_zone_operation)
       end
-
-      skip 'should destroy the folder and children' do
-        expect(subject).to receive(:destroy_folder_and_children).with(child_folder).and_return(nil)
-
-        subject.purge_unconfigured_folders(base_folders, configured_folders, whitelist)
+      it 'should attempt to delete unconfigured instances when they dont have a label' do
+        instance_list = MockInstanceList.new(items: [MockInstance.new(name: "foo")])
+        disk_list = MockDiskList.new(items: nil)
+        snapshot_list = MockSnapshotList.new(items: nil)
+        # the instance_list is filtered in the real code, and should only return non-configured VMs based on labels
+        # that do not match a real pool name
+        allow(connection).to receive(:list_instances).and_return(instance_list)
+        allow(connection).to receive(:list_disks).and_return(disk_list)
+        allow(connection).to receive(:list_snapshots).and_return(snapshot_list)
+        expect(connection).to receive(:delete_instance)
+        subject.purge_unconfigured_resources(nil)
+      end
+      it 'should attempt to delete unconfigured instances when they have a label that is not a configured pool' do
+        instance_list = MockInstanceList.new(items: [MockInstance.new(name: "foo", labels: {"pool" => "foobar"})])
+        disk_list = MockDiskList.new(items: nil)
+        snapshot_list = MockSnapshotList.new(items: nil)
+        allow(connection).to receive(:list_instances).and_return(instance_list)
+        allow(connection).to receive(:list_disks).and_return(disk_list)
+        allow(connection).to receive(:list_snapshots).and_return(snapshot_list)
+        expect(connection).to receive(:delete_instance)
+        subject.purge_unconfigured_resources(nil)
+      end
+      it 'should attempt to delete unconfigured disks and snapshots when they do not have a label' do
+        instance_list = MockInstanceList.new(items: nil)
+        disk_list = MockDiskList.new(items: [MockDisk.new(name: "diskfoo")])
+        snapshot_list = MockSnapshotList.new(items: [MockSnapshot.new(name: "snapfoo")])
+        allow(connection).to receive(:list_instances).and_return(instance_list)
+        allow(connection).to receive(:list_disks).and_return(disk_list)
+        allow(connection).to receive(:list_snapshots).and_return(snapshot_list)
+        expect(connection).to receive(:delete_disk)
+        expect(connection).to receive(:delete_snapshot)
+        subject.purge_unconfigured_resources(nil)
       end
     end
 
-    skip 'should raise any errors' do
-      expect(subject).to receive(:get_folder_children).and_throw('mockerror')
+    context 'with allowlist containing a pool name' do
+      before(:each) do
+        allow(subject).to receive(:wait_for_zone_operation)
+        $allowlist = ["allowed"]
+      end
+      it 'should attempt to delete unconfigured instances when they dont have the allowlist label' do
+        instance_list = MockInstanceList.new(items: [MockInstance.new(name: "foo", labels: {"pool" => "not_this"})])
+        disk_list = MockDiskList.new(items: nil)
+        snapshot_list = MockSnapshotList.new(items: nil)
+        allow(connection).to receive(:list_instances).and_return(instance_list)
+        allow(connection).to receive(:list_disks).and_return(disk_list)
+        allow(connection).to receive(:list_snapshots).and_return(snapshot_list)
+        expect(connection).to receive(:delete_instance)
+        subject.purge_unconfigured_resources($allowlist)
+      end
+      it 'should ignore unconfigured instances when they have a label that is allowed' do
+        instance_list = MockInstanceList.new(items: [MockInstance.new(name: "foo", labels: {"pool" => "allowed"})])
+        disk_list = MockDiskList.new(items: nil)
+        snapshot_list = MockSnapshotList.new(items: nil)
+        allow(connection).to receive(:list_instances).and_return(instance_list)
+        allow(connection).to receive(:list_disks).and_return(disk_list)
+        allow(connection).to receive(:list_snapshots).and_return(snapshot_list)
+        expect(connection).not_to receive(:delete_instance)
+        subject.purge_unconfigured_resources($allowlist)
+      end
+      it 'should ignore unconfigured disks and snapshots when they have a label that is allowed' do
+        instance_list = MockInstanceList.new(items: nil)
+        disk_list = MockDiskList.new(items: [MockDisk.new(name: "diskfoo", labels: {"pool" => "allowed"})])
+        snapshot_list = MockSnapshotList.new(items: [MockSnapshot.new(name: "snapfoo", labels: {"pool" => "allowed"})])
+        allow(connection).to receive(:list_instances).and_return(instance_list)
+        allow(connection).to receive(:list_disks).and_return(disk_list)
+        allow(connection).to receive(:list_snapshots).and_return(snapshot_list)
+        expect(connection).not_to receive(:delete_disk)
+        expect(connection).not_to receive(:delete_snapshot)
+        subject.purge_unconfigured_resources($allowlist)
+      end
+      it 'should ignore unconfigured item when they have the empty label that is allowed, which means we allow the pool label to not be set' do
+        $allowlist = ["allowed", ""]
+        instance_list = MockInstanceList.new(items: [MockInstance.new(name: "foo", labels: {"some" => "not_important"})])
+        disk_list = MockDiskList.new(items: [MockDisk.new(name: "diskfoo", labels: {"other" => "thing"})])
+        snapshot_list = MockSnapshotList.new(items: [MockSnapshot.new(name: "snapfoo")])
+        allow(connection).to receive(:list_instances).and_return(instance_list)
+        allow(connection).to receive(:list_disks).and_return(disk_list)
+        allow(connection).to receive(:list_snapshots).and_return(snapshot_list)
+        expect(connection).not_to receive(:delete_instance)
+        expect(connection).not_to receive(:delete_disk)
+        expect(connection).not_to receive(:delete_snapshot)
+        subject.purge_unconfigured_resources($allowlist)
+      end
+    end
 
-      expect{ subject.purge_unconfigured_folders(base_folders, configured_folders, whitelist) }.to raise_error(/mockerror/)
+    context 'with allowlist containing a pool name' do
+      before(:each) do
+        allow(subject).to receive(:wait_for_zone_operation)
+        $allowlist = ["allowed", ""]
+      end
+      it 'should attempt to delete unconfigured instances when they dont have the allowlist label' do
+        instance_list = MockInstanceList.new(items: [MockInstance.new(name: "foo", labels: {"pool" => "not_this"})])
+        disk_list = MockDiskList.new(items: nil)
+        snapshot_list = MockSnapshotList.new(items: nil)
+        allow(connection).to receive(:list_instances).and_return(instance_list)
+        allow(connection).to receive(:list_disks).and_return(disk_list)
+        allow(connection).to receive(:list_snapshots).and_return(snapshot_list)
+        expect(connection).to receive(:delete_instance)
+        subject.purge_unconfigured_resources($allowlist)
+      end
+      it 'should ignore unconfigured disks and snapshots when they have a label that is allowed' do
+        instance_list = MockInstanceList.new(items: nil)
+        disk_list = MockDiskList.new(items: [MockDisk.new(name: "diskfoo", labels: {"pool" => "allowed"})])
+        snapshot_list = MockSnapshotList.new(items: [MockSnapshot.new(name: "snapfoo", labels: {"pool" => "allowed"})])
+        allow(connection).to receive(:list_instances).and_return(instance_list)
+        allow(connection).to receive(:list_disks).and_return(disk_list)
+        allow(connection).to receive(:list_snapshots).and_return(snapshot_list)
+        expect(connection).not_to receive(:delete_disk)
+        expect(connection).not_to receive(:delete_snapshot)
+        subject.purge_unconfigured_resources($allowlist)
+      end
+      it 'should ignore unconfigured item when they have the empty label that is allowed, which means we allow the pool label to not be set' do
+        instance_list = MockInstanceList.new(items: [MockInstance.new(name: "foo", labels: {"some" => "not_important"})])
+        disk_list = MockDiskList.new(items: [MockDisk.new(name: "diskfoo", labels: {"other" => "thing"})])
+        snapshot_list = MockSnapshotList.new(items: [MockSnapshot.new(name: "snapfoo")])
+        allow(connection).to receive(:list_instances).and_return(instance_list)
+        allow(connection).to receive(:list_disks).and_return(disk_list)
+        allow(connection).to receive(:list_snapshots).and_return(snapshot_list)
+        expect(connection).not_to receive(:delete_instance)
+        expect(connection).not_to receive(:delete_disk)
+        expect(connection).not_to receive(:delete_snapshot)
+        subject.purge_unconfigured_resources($allowlist)
+      end
+    end
+
+    it 'should raise any errors' do
+      expect(subject).to receive(:provided_pools).and_throw('mockerror')
+      expect{ subject.purge_unconfigured_resources(nil) }.to raise_error(/mockerror/)
     end
   end
   
