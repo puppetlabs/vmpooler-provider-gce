@@ -293,6 +293,7 @@ module Vmpooler
         # 1. shutting down the VM,
         # 2. detaching and deleting the drives,
         # 3. creating new disks with the same name from the snapshot for each disk
+        # 4. attach disks and start instance
         # for one vm, there might be multiple snapshots in time. We select the ones referred to by the
         # snapshot_name, but that may be multiple snapshots, one for each disks
         # The new disk is added labels vm and pool
@@ -425,11 +426,11 @@ module Vmpooler
 
         def vm_ready?(_pool_name, vm_name)
           begin
+            #TODO: we could use a healthcheck resource attached to instance
             open_socket(vm_name, global_config[:config]['domain'])
           rescue StandardError => _e
             return false
           end
-
           true
         end
 
@@ -488,8 +489,16 @@ module Vmpooler
         end
 
         def should_be_ignored(item, allowlist)
-          (!item.labels.nil? && allowlist&.include?(item.labels['pool'])) ||
-            (allowlist&.include?("") && !item.labels&.keys&.include?('pool'))
+          allowlist.map!(&:downcase) # remove uppercase from configured values because its not valid as resource label
+          array_flattened_labels = []
+          unless item.labels.nil?
+            item.labels.each do |k,v|
+              array_flattened_labels << "#{k}=#{v}"
+            end
+          end
+          (!item.labels.nil? && allowlist&.include?(item.labels['pool'])) || # the allow list specifies the value within the pool label
+            (allowlist&.include?("") && !item.labels&.keys&.include?('pool')) || # the allow list specifies "" string and the pool label is not set
+            !(allowlist & array_flattened_labels).empty? # the allow list specify a fully qualified label eg user=Bob and the item has it
         end
 
         # END BASE METHODS

@@ -59,7 +59,6 @@ EOT
 
   describe '#manual tests live' do
     skip 'runs in gce' do
-=begin
       puts "creating"
       result = subject.create_vm(poolname, vmname)
       puts "create snapshot w/ one disk"
@@ -68,7 +67,6 @@ EOT
       result = subject.create_disk(poolname, vmname, 10)
       puts "create snapshot w/ 2 disks"
       result = subject.create_snapshot(poolname, vmname, "sams2")
-=end
       puts "revert snapshot"
       result = subject.revert_snapshot(poolname, vmname, "sams")
       #result = subject.destroy_vm(poolname, vmname)
@@ -82,7 +80,6 @@ EOT
     end
 
     skip 'debug' do
-
       puts subject.purge_unconfigured_resources(['foo', '', 'blah'])
     end
   end
@@ -514,15 +511,17 @@ EOT
     end
 
     context 'when instance does not have attached disks' do
-      it 'should raise an error' do
-        disk = nil
-        instance = MockInstance.new(name: vmname, disks: [disk])
+      it 'should skip detaching/deleting disk' do
+        instance = MockInstance.new(name: vmname, disks: nil)
         allow(connection).to receive(:get_instance).and_return(instance)
-        snapshots = [MockSnapshot.new(name: snapshot_name)]
+        snapshots = []
         allow(subject).to receive(:find_snapshot).and_return(snapshots)
         allow(connection).to receive(:stop_instance)
         allow(subject).to receive(:wait_for_operation)
-        expect{ subject.revert_snapshot(poolname,vmname,snapshot_name) }.to raise_error(/No disk is currently attached to VM #{vmname} in pool #{poolname}, cannot revert snapshot/)
+        allow(connection).to receive(:start_instance)
+        expect(subject).not_to receive(:detach_disk)
+        expect(subject).not_to receive(:delete_disk)
+        subject.revert_snapshot(poolname,vmname,snapshot_name)
       end
     end
 
@@ -664,7 +663,7 @@ EOT
       end
     end
 
-    context 'with allowlist containing a pool name' do
+    context 'with allowlist containing a pool name and the empty string' do
       before(:each) do
         allow(subject).to receive(:wait_for_zone_operation)
         $allowlist = ["allowed", ""]
@@ -694,6 +693,35 @@ EOT
         instance_list = MockInstanceList.new(items: [MockInstance.new(name: "foo", labels: {"some" => "not_important"})])
         disk_list = MockDiskList.new(items: [MockDisk.new(name: "diskfoo", labels: {"other" => "thing"})])
         snapshot_list = MockSnapshotList.new(items: [MockSnapshot.new(name: "snapfoo")])
+        allow(connection).to receive(:list_instances).and_return(instance_list)
+        allow(connection).to receive(:list_disks).and_return(disk_list)
+        allow(connection).to receive(:list_snapshots).and_return(snapshot_list)
+        expect(connection).not_to receive(:delete_instance)
+        expect(connection).not_to receive(:delete_disk)
+        expect(connection).not_to receive(:delete_snapshot)
+        subject.purge_unconfigured_resources($allowlist)
+      end
+    end
+
+    context 'with allowlist containing a a fully qualified label that is not pool' do
+      before(:each) do
+        allow(subject).to receive(:wait_for_zone_operation)
+        $allowlist = ["user=Bob"]
+      end
+      it 'should attempt to delete unconfigured instances when they dont have the allowlist label' do
+        instance_list = MockInstanceList.new(items: [MockInstance.new(name: "foo", labels: {"pool" => "not_this"})])
+        disk_list = MockDiskList.new(items: nil)
+        snapshot_list = MockSnapshotList.new(items: nil)
+        allow(connection).to receive(:list_instances).and_return(instance_list)
+        allow(connection).to receive(:list_disks).and_return(disk_list)
+        allow(connection).to receive(:list_snapshots).and_return(snapshot_list)
+        expect(connection).to receive(:delete_instance)
+        subject.purge_unconfigured_resources($allowlist)
+      end
+      it 'should ignore unconfigured item when they match the fully qualified label' do
+        instance_list = MockInstanceList.new(items: [MockInstance.new(name: "foo", labels: {"some" => "not_important", "user" => "bob"})])
+        disk_list = MockDiskList.new(items: [MockDisk.new(name: "diskfoo", labels: {"other" => "thing", "user" => "bob"})])
+        snapshot_list = MockSnapshotList.new(items: [MockSnapshot.new(name: "snapfoo", labels: {"user" => "bob"})])
         allow(connection).to receive(:list_instances).and_return(instance_list)
         allow(connection).to receive(:list_disks).and_return(disk_list)
         allow(connection).to receive(:list_snapshots).and_return(snapshot_list)
