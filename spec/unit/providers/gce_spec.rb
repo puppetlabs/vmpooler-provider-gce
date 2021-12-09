@@ -9,7 +9,7 @@ end
 describe 'Vmpooler::PoolManager::Provider::Gce' do
   let(:logger) { MockLogger.new }
   let(:metrics) { Vmpooler::Metrics::DummyStatsd.new }
-  let(:poolname) { 'pool1' }
+  let(:poolname) { 'debian-9' }
   let(:provider_options) { { 'param' => 'value' } }
   let(:project) { 'dio-samuel-dev' }
   let(:zone){ 'us-west1-b' }
@@ -38,7 +38,7 @@ EOT
     )
   }
 
-  let(:vmname) { 'vm15' }
+  let(:vmname) { 'vm16' }
   let(:connection) { MockComputeServiceConnection.new }
   let(:redis_connection_pool) { Vmpooler::PoolManager::GenericConnectionPool.new(
     metrics: metrics,
@@ -62,7 +62,8 @@ EOT
       puts "creating"
       result = subject.create_vm(poolname, vmname)
       subject.get_vm(poolname, vmname)
-=begin
+      subject.vms_in_pool(poolname)
+
       puts "create snapshot w/ one disk"
       result = subject.create_snapshot(poolname, vmname, "sams")
       puts "create disk"
@@ -71,8 +72,7 @@ EOT
       result = subject.create_snapshot(poolname, vmname, "sams2")
       puts "revert snapshot"
       result = subject.revert_snapshot(poolname, vmname, "sams")
-=end
-      #result = subject.destroy_vm(poolname, vmname)
+      result = subject.destroy_vm(poolname, vmname)
     end
 
     skip 'runs existing' do
