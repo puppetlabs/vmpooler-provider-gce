@@ -38,7 +38,7 @@ EOT
     )
   }
 
-  let(:vmname) { 'vm13' }
+  let(:vmname) { 'vm15' }
   let(:connection) { MockComputeServiceConnection.new }
   let(:redis_connection_pool) { Vmpooler::PoolManager::GenericConnectionPool.new(
     metrics: metrics,
@@ -61,6 +61,8 @@ EOT
     skip 'runs in gce' do
       puts "creating"
       result = subject.create_vm(poolname, vmname)
+      subject.get_vm(poolname, vmname)
+=begin
       puts "create snapshot w/ one disk"
       result = subject.create_snapshot(poolname, vmname, "sams")
       puts "create disk"
@@ -69,6 +71,7 @@ EOT
       result = subject.create_snapshot(poolname, vmname, "sams2")
       puts "revert snapshot"
       result = subject.revert_snapshot(poolname, vmname, "sams")
+=end
       #result = subject.destroy_vm(poolname, vmname)
     end
 
@@ -735,6 +738,21 @@ EOT
     it 'should raise any errors' do
       expect(subject).to receive(:provided_pools).and_throw('mockerror')
       expect{ subject.purge_unconfigured_resources(nil) }.to raise_error(/mockerror/)
+    end
+  end
+
+  describe '#get_current_user' do
+    it 'should downcase and replace invalid chars with dashes' do
+      redis_connection_pool.with_metrics do |redis|
+        redis.hset("vmpooler__vm__#{vmname}", 'token:user', "BOBBY.PUPPET")
+        expect(subject.get_current_user(vmname)).to eq("bobby-puppet")
+      end
+    end
+
+    it 'returns "" for nil values' do
+      redis_connection_pool.with_metrics do |redis|
+        expect(subject.get_current_user(vmname)).to eq("")
+      end
     end
   end
   

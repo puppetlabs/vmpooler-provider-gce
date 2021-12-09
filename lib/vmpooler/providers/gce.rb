@@ -488,6 +488,37 @@ module Vmpooler
           end
         end
 
+        # tag_vm_user This method is called once we know who is using the VM (it is running). This method enables seeing
+        # who is using what in the provider pools.
+        #
+        # inputs
+        #   [String] pool_name : Name of the pool
+        #   [String] vm_name   : Name of the VM to check if ready
+        # returns
+        #   [Boolean] : true if successful, false if an error occurred and it should retry
+        def tag_vm_user(pool, vm)
+          @redis.with_metrics do |redis|
+            user = get_current_user(vm)
+            vm_hash = get_vm(pool, vm)
+            return false if vm_hash.nil?
+            new_labels = vm_hash['labels']
+            # bailing in this case since labels should exist, and continuing would mean losing them
+            return false if new_labels.nil?
+            # add new label called token-user, with value as user
+            new_labels['token-user'] = user
+            begin
+              instances_set_labels_request_object = Google::Apis::ComputeV1::InstancesSetLabelsRequest.new(label_fingerprint:vm_hash['label_fingerprint'], labels: new_labels)
+              result = connection.set_instance_labels(project, zone(pool), vm, instances_set_labels_request_object)
+              wait_for_zone_operation(project, zone(pool), result, connection)
+            rescue StandardError => _e
+              return false
+            end
+            return true
+          end
+        end
+
+        # END BASE METHODS
+
         def should_be_ignored(item, allowlist)
           allowlist.map!(&:downcase) # remove uppercase from configured values because its not valid as resource label
           array_flattened_labels = []
@@ -501,7 +532,18 @@ module Vmpooler
             !(allowlist & array_flattened_labels).empty? # the allow list specify a fully qualified label eg user=Bob and the item has it
         end
 
-        # END BASE METHODS
+        def get_current_user(vm)
+          @redis.with_metrics do |redis|
+            user = redis.hget("vmpooler__vm__#{vm}", 'token:user')
+            return "" if user.nil?
+            # cleanup so it's a valid label value
+            # can't have upercase
+            user = user.downcase
+            # replace invalid chars with dash
+            user = user.gsub(/[^0-9a-z_-]/, '-')
+            return user
+          end
+        end
 
         # Compute resource wait for operation to be DONE (synchronous operation)
         def wait_for_zone_operation(project, zone, result, connection, retries=5)
@@ -542,14 +584,16 @@ module Vmpooler
           return nil if pool_configuration.nil?
 
           {
-            'name'         => vm_object.name,
-            'hostname'     => vm_object.hostname,
-            'template'     => pool_configuration && pool_configuration.key?('template') ? pool_configuration['template'] : nil, #TODO: get it from the API, not from config, but this is what vSphere does too!
-            'poolname'     => vm_object.labels && vm_object.labels.key?('pool') ? vm_object.labels['pool'] : nil,
-            'boottime'     => vm_object.creation_timestamp,
-            'status'       => vm_object.status, # One of the following values: PROVISIONING, STAGING, RUNNING, STOPPING, SUSPENDING, SUSPENDED, REPAIRING, and TERMINATED
-            'zone'         => vm_object.zone,
-            'machine_type' => vm_object.machine_type
+            'name'              => vm_object.name,
+            'hostname'          => vm_object.hostname,
+            'template'          => pool_configuration && pool_configuration.key?('template') ? pool_configuration['template'] : nil, #TODO: get it from the API, not from config, but this is what vSphere does too!
+            'poolname'          => vm_object.labels && vm_object.labels.key?('pool') ? vm_object.labels['pool'] : nil,
+            'boottime'          => vm_object.creation_timestamp,
+            'status'            => vm_object.status, # One of the following values: PROVISIONING, STAGING, RUNNING, STOPPING, SUSPENDING, SUSPENDED, REPAIRING, and TERMINATED
+            'zone'              => vm_object.zone,
+            'machine_type'      => vm_object.machine_type,
+            'labels'            => vm_object.labels,
+            'label_fingerprint' => vm_object.label_fingerprint
             #'powerstate' => powerstate
           }
         end
