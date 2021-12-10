@@ -1,5 +1,3 @@
-# frozen_string_literal: true
-
 require 'spec_helper'
 require 'mock_redis'
 require 'vmpooler/providers/gce'
@@ -15,31 +13,30 @@ describe 'Vmpooler::PoolManager::Provider::Gce' do
   let(:provider_options) { { 'param' => 'value' } }
   let(:project) { 'dio-samuel-dev' }
   let(:zone) { 'us-west1-b' }
-  let(:config) do
-    YAML.safe_load(<<~EOT
-      ---
-      :config:
-        max_tries: 3
-        retry_factor: 10
-      :providers:
-        :gce:
-          connection_pool_timeout: 1
-          project: '#{project}'
-          zone: '#{zone}'
-          network_name: 'global/networks/default'
-      :pools:
-        - name: '#{poolname}'
-          alias: [ 'mockpool' ]
-          template: 'projects/debian-cloud/global/images/family/debian-9'
-          size: 5
-          timeout: 10
-          ready_ttl: 1440
-          provider: 'gce'
-          network_name: 'default'
-          machine_type: 'zones/#{zone}/machineTypes/e2-micro'
-    EOT
-                  )
-  end
+  let(:config) { YAML.load(<<-EOT
+---
+:config:
+  max_tries: 3
+  retry_factor: 10
+:providers:
+  :gce:
+    connection_pool_timeout: 1
+    project: '#{project}'
+    zone: '#{zone}'
+    network_name: 'global/networks/default'
+:pools:
+  - name: '#{poolname}'
+    alias: [ 'mockpool' ]
+    template: 'projects/debian-cloud/global/images/family/debian-9'
+    size: 5
+    timeout: 10
+    ready_ttl: 1440
+    provider: 'gce'
+    network_name: 'default'
+    machine_type: 'zones/#{zone}/machineTypes/e2-micro'
+EOT
+    )
+  }
 
   let(:vmname) { 'vm16' }
   let(:connection) { MockComputeServiceConnection.new }
