@@ -1,23 +1,22 @@
+# frozen_string_literal: true
+
 require 'mock_redis'
 
 def redis
-  unless @redis
-    @redis = MockRedis.new
-  end
+  @redis ||= MockRedis.new
   @redis
 end
 
 # Mock an object which represents a Logger.  This stops the proliferation
 # of allow(logger).to .... expectations in tests.
 class MockLogger
-  def log(_level, string)
-  end
+  def log(_level, string); end
 end
 
 def expect_json(ok = true, http = 200)
   expect(last_response.header['Content-Type']).to eq('application/json')
 
-  if (ok == true) then
+  if ok == true
     expect(JSON.parse(last_response.body)['ok']).to eq(true)
   else
     expect(JSON.parse(last_response.body)['ok']).to eq(false)
@@ -35,7 +34,7 @@ def get_token_data(token)
   redis.hgetall("vmpooler__token__#{token}")
 end
 
-def token_exists?(token)
+def token_exists?(_token)
   result = get_token_data
   result && !result.empty?
 end
@@ -43,7 +42,7 @@ end
 def create_ready_vm(template, name, redis, token = nil)
   create_vm(name, redis, token)
   redis.sadd("vmpooler__ready__#{template}", name)
-  redis.hset("vmpooler__vm__#{name}", "template", template)
+  redis.hset("vmpooler__vm__#{name}", 'template', template)
 end
 
 def create_running_vm(template, name, redis, token = nil, user = nil)
@@ -57,7 +56,7 @@ end
 def create_pending_vm(template, name, redis, token = nil)
   create_vm(name, redis, token)
   redis.sadd("vmpooler__pending__#{template}", name)
-  redis.hset("vmpooler__vm__#{name}", "template", template)
+  redis.hset("vmpooler__vm__#{name}", 'template', template)
 end
 
 def create_vm(name, redis, token = nil, user = nil)
@@ -100,12 +99,12 @@ end
 
 def snapshot_revert_vm(vm, snapshot = '12345678901234567890123456789012', redis)
   redis.sadd('vmpooler__tasks__snapshot-revert', "#{vm}:#{snapshot}")
-  redis.hset("vmpooler__vm__#{vm}", "snapshot:#{snapshot}", "1")
+  redis.hset("vmpooler__vm__#{vm}", "snapshot:#{snapshot}", '1')
 end
 
 def snapshot_vm(vm, snapshot = '12345678901234567890123456789012', redis)
   redis.sadd('vmpooler__tasks__snapshot', "#{vm}:#{snapshot}")
-  redis.hset("vmpooler__vm__#{vm}", "snapshot:#{snapshot}", "1")
+  redis.hset("vmpooler__vm__#{vm}", "snapshot:#{snapshot}", '1')
 end
 
 def disk_task_vm(vm, disk_size = '10', redis)
@@ -127,7 +126,7 @@ def vm_reverted_to_snapshot?(vm, redis, snapshot = nil)
 end
 
 def pool_has_ready_vm?(pool, vm, redis)
-  !!redis.sismember('vmpooler__ready__' + pool, vm)
+  !!redis.sismember("vmpooler__ready__#{pool}", vm)
 end
 
 def create_ondemand_request_for_test(request_id, score, platforms_string, redis, user = nil, token = nil)

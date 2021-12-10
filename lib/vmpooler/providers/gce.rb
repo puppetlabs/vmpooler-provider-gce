@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+
 require 'googleauth'
 require 'google/apis/compute_v1'
 require 'bigdecimal'
@@ -8,6 +9,7 @@ require 'vmpooler/providers/base'
 module Vmpooler
   class PoolManager
     class Provider
+      # This class represent a GCE provider to CRUD resources in a gce cloud.
       class Gce < Vmpooler::PoolManager::Provider::Base
         # The connection_pool method is normally used only for testing
         attr_reader :connection_pool
@@ -75,7 +77,7 @@ module Vmpooler
           return provider_config['machine_type'] if provider_config['machine_type']
         end
 
-        #Base methods that are implemented:
+        # Base methods that are implemented:
 
         # vms_in_pool lists all the VM names in a pool, which is based on the VMs
         # having a label "pool" that match a pool config name.
@@ -87,10 +89,11 @@ module Vmpooler
         #     [Hashtable]
         #       [String] name : the name of the VM instance (unique for whole project)
         def vms_in_pool(pool_name)
-          debug_logger("vms_in_pool")
+          debug_logger('vms_in_pool')
           vms = []
           pool = pool_config(pool_name)
           raise("Pool #{pool_name} does not exist for the provider #{name}") if pool.nil?
+
           zone = zone(pool_name)
           filter = "(labels.pool = #{pool_name})"
           instance_list = connection.list_instances(project, zone, filter: filter)
@@ -121,13 +124,14 @@ module Vmpooler
         #    [String] zone       : URL of the zone where the instance resides.
         #    [String] machine_type : Full or partial URL of the machine type resource to use for this instance, in the format: zones/zone/machineTypes/machine-type.
         def get_vm(pool_name, vm_name)
-          debug_logger("get_vm")
+          debug_logger('get_vm')
           vm_hash = nil
           begin
             vm_object = connection.get_instance(project, zone(pool_name), vm_name)
           rescue ::Google::Apis::ClientError => e
             raise e unless e.status_code == 404
-            #swallow the ClientError error 404 and return nil when the VM was not found
+
+            # swallow the ClientError error 404 and return nil when the VM was not found
             return nil
           end
 
@@ -150,38 +154,37 @@ module Vmpooler
         # returns
         #   [Hashtable] of the VM as per get_vm(pool_name, vm_name)
         def create_vm(pool_name, new_vmname)
-          debug_logger("create_vm")
+          debug_logger('create_vm')
           pool = pool_config(pool_name)
           raise("Pool #{pool_name} does not exist for the provider #{name}") if pool.nil?
-          vm_hash = nil
+
           # harcoded network info
           network_interfaces = Google::Apis::ComputeV1::NetworkInterface.new(
-            :network => network_name
+            network: network_name
           )
-          initParams = {
-            :source_image => pool['template'], #The source image to create this disk.
-            :labels => {'vm' => new_vmname, 'pool' => pool_name},
-            :disk_name => "#{new_vmname}-disk0"
+          init_params = {
+            source_image: pool['template'], # The source image to create this disk.
+            labels: { 'vm' => new_vmname, 'pool' => pool_name },
+            disk_name: "#{new_vmname}-disk0"
           }
           disk = Google::Apis::ComputeV1::AttachedDisk.new(
-            :auto_delete => true,
-            :boot => true,
-            :initialize_params => Google::Apis::ComputeV1::AttachedDiskInitializeParams.new(initParams)
+            auto_delete: true,
+            boot: true,
+            initialize_params: Google::Apis::ComputeV1::AttachedDiskInitializeParams.new(init_params)
           )
 
           # Assume all pool config is valid i.e. not missing
           client = ::Google::Apis::ComputeV1::Instance.new(
-            :name => new_vmname,
-            :machine_type => pool['machine_type'],
-            :disks => [disk],
-            :network_interfaces => [network_interfaces],
-            :labels => {'vm' => new_vmname, 'pool' => pool_name}
+            name: new_vmname,
+            machine_type: pool['machine_type'],
+            disks: [disk],
+            network_interfaces: [network_interfaces],
+            labels: { 'vm' => new_vmname, 'pool' => pool_name }
           )
-          debug_logger("trigger insert_instance")
+          debug_logger('trigger insert_instance')
           result = connection.insert_instance(project, zone(pool_name), client)
-          result = wait_for_operation(project, pool_name, result)
-          vm_hash = get_vm(pool_name, new_vmname)
-          vm_hash
+          wait_for_operation(project, pool_name, result)
+          get_vm(pool_name, new_vmname)
         end
 
         # create_disk creates an additional disk for an existing VM. It will name the new
@@ -200,7 +203,7 @@ module Vmpooler
         # returns
         #   [boolean] true : once the operations are finished
         def create_disk(pool_name, vm_name, disk_size)
-          debug_logger("create_disk")
+          debug_logger('create_disk')
           pool = pool_config(pool_name)
           raise("Pool #{pool_name} does not exist for the provider #{name}") if pool.nil?
 
@@ -208,18 +211,19 @@ module Vmpooler
             vm_object = connection.get_instance(project, zone(pool_name), vm_name)
           rescue ::Google::Apis::ClientError => e
             raise e unless e.status_code == 404
-            #if it does not exist
+
+            # if it does not exist
             raise("VM #{vm_name} in pool #{pool_name} does not exist for the provider #{name}")
           end
           # this number should start at 1 when there is only the boot disk,
           # eg the new disk will be named spicy-proton-disk1
-          number_disk = vm_object.disks.length()
+          number_disk = vm_object.disks.length
 
           disk_name = "#{vm_name}-disk#{number_disk}"
           disk = Google::Apis::ComputeV1::Disk.new(
-            :name => disk_name,
-            :size_gb => disk_size,
-            :labels => {"pool" => pool_name, "vm" => vm_name}
+            name: disk_name,
+            size_gb: disk_size,
+            labels: { 'pool' => pool_name, 'vm' => vm_name }
           )
           debug_logger("trigger insert_disk #{disk_name} for #{vm_name}")
           result = connection.insert_disk(project, zone(pool_name), disk)
@@ -228,9 +232,9 @@ module Vmpooler
           new_disk = connection.get_disk(project, zone(pool_name), disk_name)
 
           attached_disk = Google::Apis::ComputeV1::AttachedDisk.new(
-            :auto_delete => true,
-            :boot => false,
-            :source => new_disk.self_link
+            auto_delete: true,
+            boot: false,
+            source: new_disk.self_link
           )
           debug_logger("trigger attach_disk #{disk_name} for #{vm_name}")
           result = connection.attach_disk(project, zone(pool_name), vm_object.name, attached_disk)
@@ -254,12 +258,13 @@ module Vmpooler
         #   RuntimeError if the vm_name cannot be found
         #   RuntimeError if the snapshot_name already exists for this VM
         def create_snapshot(pool_name, vm_name, new_snapshot_name)
-          debug_logger("create_snapshot")
+          debug_logger('create_snapshot')
           begin
             vm_object = connection.get_instance(project, zone(pool_name), vm_name)
           rescue ::Google::Apis::ClientError => e
             raise e unless e.status_code == 404
-            #if it does not exist
+
+            # if it does not exist
             raise("VM #{vm_name} in pool #{pool_name} does not exist for the provider #{name}")
           end
 
@@ -272,11 +277,11 @@ module Vmpooler
             snapshot_obj = ::Google::Apis::ComputeV1::Snapshot.new(
               name: "#{new_snapshot_name}-#{disk_name}",
               labels: {
-                "snapshot_name" => new_snapshot_name,
-                "vm" => vm_name,
-                "pool" => pool_name,
-                "diskname" => disk_name,
-                "boot" => attached_disk.boot.to_s
+                'snapshot_name' => new_snapshot_name,
+                'vm' => vm_name,
+                'pool' => pool_name,
+                'diskname' => disk_name,
+                'boot' => attached_disk.boot.to_s
               }
             )
             debug_logger("trigger async create_disk_snapshot #{vm_name}: #{new_snapshot_name}-#{disk_name}")
@@ -284,7 +289,7 @@ module Vmpooler
             # do them all async, keep a list, check later
             result_list << result
           end
-          #now check they are done
+          # now check they are done
           result_list.each do |result|
             wait_for_operation(project, pool_name, result)
           end
@@ -310,12 +315,13 @@ module Vmpooler
         #   RuntimeError if the vm_name cannot be found
         #   RuntimeError if the snapshot_name already exists for this VM
         def revert_snapshot(pool_name, vm_name, snapshot_name)
-          debug_logger("revert_snapshot")
+          debug_logger('revert_snapshot')
           begin
             vm_object = connection.get_instance(project, zone(pool_name), vm_name)
           rescue ::Google::Apis::ClientError => e
             raise e unless e.status_code == 404
-            #if it does not exist
+
+            # if it does not exist
             raise("VM #{vm_name} in pool #{pool_name} does not exist for the provider #{name}")
           end
 
@@ -328,26 +334,24 @@ module Vmpooler
           wait_for_operation(project, pool_name, result)
 
           # Delete existing disks
-          if vm_object.disks
-            vm_object.disks.each do |attached_disk|
-              debug_logger("trigger detach_disk #{vm_name}: #{attached_disk.device_name}")
-              result = connection.detach_disk(project, zone(pool_name), vm_name, attached_disk.device_name)
-              wait_for_operation(project, pool_name, result)
-              current_disk_name = disk_name_from_source(attached_disk)
-              debug_logger("trigger delete_disk #{vm_name}: #{current_disk_name}")
-              result = connection.delete_disk(project, zone(pool_name), current_disk_name)
-              wait_for_operation(project, pool_name, result)
-            end
+          vm_object.disks&.each do |attached_disk|
+            debug_logger("trigger detach_disk #{vm_name}: #{attached_disk.device_name}")
+            result = connection.detach_disk(project, zone(pool_name), vm_name, attached_disk.device_name)
+            wait_for_operation(project, pool_name, result)
+            current_disk_name = disk_name_from_source(attached_disk)
+            debug_logger("trigger delete_disk #{vm_name}: #{current_disk_name}")
+            result = connection.delete_disk(project, zone(pool_name), current_disk_name)
+            wait_for_operation(project, pool_name, result)
           end
 
           # this block is sensitive to disruptions, for example if vmpooler is stopped while this is running
           snapshot_object.each do |snapshot|
             current_disk_name = snapshot.labels['diskname']
-            bootable = (snapshot.labels['boot'] == "true")
+            bootable = (snapshot.labels['boot'] == 'true')
             disk = Google::Apis::ComputeV1::Disk.new(
-              :name => current_disk_name,
-              :labels => {"pool" => pool_name, "vm" => vm_name},
-              :source_snapshot => snapshot.self_link
+              name: current_disk_name,
+              labels: { 'pool' => pool_name, 'vm' => vm_name },
+              source_snapshot: snapshot.self_link
             )
             # create disk in GCE as a separate resource
             debug_logger("trigger insert_disk #{vm_name}: #{current_disk_name} based on #{snapshot.self_link}")
@@ -356,9 +360,9 @@ module Vmpooler
             # read the new disk info
             new_disk_info = connection.get_disk(project, zone(pool_name), current_disk_name)
             new_attached_disk = Google::Apis::ComputeV1::AttachedDisk.new(
-              :auto_delete => true,
-              :boot => bootable,
-              :source => new_disk_info.self_link
+              auto_delete: true,
+              boot: bootable,
+              source: new_disk_info.self_link
             )
             # attach the new disk to existing instance
             debug_logger("trigger attach_disk #{vm_name}: #{current_disk_name}")
@@ -380,18 +384,19 @@ module Vmpooler
         # returns
         #   [boolean] true : once the operations are finished
         def destroy_vm(pool_name, vm_name)
-          debug_logger("destroy_vm")
+          debug_logger('destroy_vm')
           deleted = false
           begin
-            vm_object = connection.get_instance(project, zone(pool_name), vm_name)
+            connection.get_instance(project, zone(pool_name), vm_name)
           rescue ::Google::Apis::ClientError => e
             raise e unless e.status_code == 404
+
             # If a VM doesn't exist then it is effectively deleted
             deleted = true
             debug_logger("instance #{vm_name} already deleted")
           end
 
-          if(!deleted)
+          unless deleted
             debug_logger("trigger delete_instance #{vm_name}")
             result = connection.delete_instance(project, zone(pool_name), vm_name)
             wait_for_operation(project, pool_name, result, 10)
@@ -401,41 +406,37 @@ module Vmpooler
           filter = "(labels.vm = #{vm_name})"
           disk_list = connection.list_disks(project, zone(pool_name), filter: filter)
           result_list = []
-          unless disk_list.items.nil?
-            disk_list.items.each do |disk|
-              debug_logger("trigger delete_disk #{disk.name}")
-              result = connection.delete_disk(project, zone(pool_name), disk.name)
-              # do them all async, keep a list, check later
-              result_list << result
-            end
+          disk_list.items&.each do |disk|
+            debug_logger("trigger delete_disk #{disk.name}")
+            result = connection.delete_disk(project, zone(pool_name), disk.name)
+            # do them all async, keep a list, check later
+            result_list << result
           end
-          #now check they are done
-          result_list.each do |result|
-            wait_for_operation(project, pool_name, result)
+          # now check they are done
+          result_list.each do |r|
+            wait_for_operation(project, pool_name, r)
           end
 
           # list and delete leftover snapshots, this could happen if snapshots were taken,
           # as they are not removed when the original disk is deleted or the instance is detroyed
           snapshot_list = find_all_snapshots(vm_name)
           result_list = []
-          unless snapshot_list.nil?
-            snapshot_list.each do |snapshot|
-              debug_logger("trigger delete_snapshot #{snapshot.name}")
-              result = connection.delete_snapshot(project, snapshot.name)
-              # do them all async, keep a list, check later
-              result_list << result
-            end
+          snapshot_list&.each do |snapshot|
+            debug_logger("trigger delete_snapshot #{snapshot.name}")
+            result = connection.delete_snapshot(project, snapshot.name)
+            # do them all async, keep a list, check later
+            result_list << result
           end
-          #now check they are done
-          result_list.each do |result|
-            wait_for_operation(project, pool_name, result)
+          # now check they are done
+          result_list.each do |r|
+            wait_for_operation(project, pool_name, r)
           end
           true
         end
 
         def vm_ready?(_pool_name, vm_name)
           begin
-            #TODO: we could use a healthcheck resource attached to instance
+            # TODO: we could use a healthcheck resource attached to instance
             open_socket(vm_name, global_config[:config]['domain'])
           rescue StandardError => _e
             return false
@@ -446,7 +447,7 @@ module Vmpooler
         # Scans zones that are configured for list of resources (VM, disks, snapshots) that do not have the label.pool set
         # to one of the configured pools. If it is also not in the allowlist, the resource is destroyed
         def purge_unconfigured_resources(allowlist)
-          debug_logger("purge_unconfigured_resources")
+          debug_logger('purge_unconfigured_resources')
           pools_array = provided_pools
           filter = {}
           # we have to group things by zone, because the API search feature is done against a zone and not global
@@ -455,45 +456,44 @@ module Vmpooler
             filter[zone(pool)] = [] if filter[zone(pool)].nil?
             filter[zone(pool)] << "(labels.pool != #{pool})"
           end
-          filter.keys.each do |zone|
+          filter.each_key do |zone|
             # this filter should return any item that have a labels.pool that is not in the config OR
             # do not have a pool label at all
-            filter_string = filter[zone].join(" AND ") + " OR -labels.pool:*"
-            #VMs
+            filter_string = "#{filter[zone].join(' AND ')} OR -labels.pool:*"
+            # VMs
             instance_list = connection.list_instances(project, zone, filter: filter_string)
 
             result_list = []
-            unless instance_list.items.nil?
-              instance_list.items.each do |vm|
-                next if should_be_ignored(vm, allowlist)
-                debug_logger("trigger async delete_instance #{vm.name}")
-                result = connection.delete_instance(project, zone, vm.name)
-                result_list << result
-              end
+            instance_list.items&.each do |vm|
+              next if should_be_ignored(vm, allowlist)
+
+              debug_logger("trigger async delete_instance #{vm.name}")
+              result = connection.delete_instance(project, zone, vm.name)
+              result_list << result
             end
-            #now check they are done
+            # now check they are done
             result_list.each do |result|
               wait_for_zone_operation(project, zone, result)
             end
 
-            #Disks
+            # Disks
             disks_list = connection.list_disks(project, zone, filter: filter_string)
-            unless disks_list.items.nil?
-              disks_list.items.each do |disk|
-                next if should_be_ignored(disk, allowlist)
-                debug_logger("trigger async no wait delete_disk #{disk.name}")
-                result = connection.delete_disk(project, zone, disk.name)
-              end
+            disks_list.items&.each do |disk|
+              next if should_be_ignored(disk, allowlist)
+
+              debug_logger("trigger async no wait delete_disk #{disk.name}")
+              connection.delete_disk(project, zone, disk.name)
             end
 
-            #Snapshots
+            # Snapshots
             snapshot_list = connection.list_snapshots(project, filter: filter_string)
-            unless snapshot_list.items.nil?
-              snapshot_list.items.each do |sn|
-                next if should_be_ignored(sn, allowlist)
-                debug_logger("trigger async no wait delete_snapshot #{sn.name}")
-                result = connection.delete_snapshot(project, sn.name)
-              end
+            next if snapshot_list.items.nil?
+
+            snapshot_list.items.each do |sn|
+              next if should_be_ignored(sn, allowlist)
+
+              debug_logger("trigger async no wait delete_snapshot #{sn.name}")
+              connection.delete_snapshot(project, sn.name)
             end
           end
         end
@@ -506,45 +506,47 @@ module Vmpooler
         #   [String] vm_name   : Name of the VM to check if ready
         # returns
         #   [Boolean] : true if successful, false if an error occurred and it should retry
-        def tag_vm_user(pool, vm)
-          user = get_current_user(vm)
-          vm_hash = get_vm(pool, vm)
+        def tag_vm_user(pool, vm_name)
+          user = get_current_user(vm_name)
+          vm_hash = get_vm(pool, vm_name)
           return false if vm_hash.nil?
+
           new_labels = vm_hash['labels']
           # bailing in this case since labels should exist, and continuing would mean losing them
           return false if new_labels.nil?
+
           # add new label called token-user, with value as user
           new_labels['token-user'] = user
           begin
-            instances_set_labels_request_object = Google::Apis::ComputeV1::InstancesSetLabelsRequest.new(label_fingerprint:vm_hash['label_fingerprint'], labels: new_labels)
-            result = connection.set_instance_labels(project, zone(pool), vm, instances_set_labels_request_object)
+            instances_set_labels_request_object = Google::Apis::ComputeV1::InstancesSetLabelsRequest.new(label_fingerprint: vm_hash['label_fingerprint'], labels: new_labels)
+            result = connection.set_instance_labels(project, zone(pool), vm_name, instances_set_labels_request_object)
             wait_for_zone_operation(project, zone(pool), result)
           rescue StandardError => _e
             return false
           end
-          return true
+          true
         end
 
         # END BASE METHODS
 
         def should_be_ignored(item, allowlist)
           return false if allowlist.nil?
-          allowlist.map!(&:downcase)  # remove uppercase from configured values because its not valid as resource label
+
+          allowlist.map!(&:downcase) # remove uppercase from configured values because its not valid as resource label
           array_flattened_labels = []
-          unless item.labels.nil?
-            item.labels.each do |k,v|
-              array_flattened_labels << "#{k}=#{v}"
-            end
+          item.labels&.each do |k, v|
+            array_flattened_labels << "#{k}=#{v}"
           end
           (!item.labels.nil? && allowlist&.include?(item.labels['pool'])) || # the allow list specifies the value within the pool label
-            (allowlist&.include?("") && !item.labels&.keys&.include?('pool')) || # the allow list specifies "" string and the pool label is not set
+            (allowlist&.include?('') && !item.labels&.keys&.include?('pool')) || # the allow list specifies "" string and the pool label is not set
             !(allowlist & array_flattened_labels).empty? # the allow list specify a fully qualified label eg user=Bob and the item has it
         end
 
-        def get_current_user(vm)
+        def get_current_user(vm_name)
           @redis.with_metrics do |redis|
-            user = redis.hget("vmpooler__vm__#{vm}", 'token:user')
-            return "" if user.nil?
+            user = redis.hget("vmpooler__vm__#{vm_name}", 'token:user')
+            return '' if user.nil?
+
             # cleanup so it's a valid label value
             # can't have upercase
             user = user.downcase
@@ -555,13 +557,13 @@ module Vmpooler
         end
 
         # Compute resource wait for operation to be DONE (synchronous operation)
-        def wait_for_zone_operation(project, zone, result, retries=5)
+        def wait_for_zone_operation(project, zone, result, retries = 5)
           while result.status != 'DONE'
             result = connection.wait_zone_operation(project, zone, result.name)
             debug_logger("  -> wait_for_zone_operation status #{result.status} (#{result.name})")
           end
           if result.error # unsure what kind of error can be stored here
-            error_message = ""
+            error_message = ''
             # array of errors, combine them all
             result.error.each do |error|
               error_message = "#{error_message} #{error.code}:#{error.message}"
@@ -571,19 +573,20 @@ module Vmpooler
           result
         rescue Google::Apis::TransmissionError => e
           # Error returned once timeout reached, each retry typically about 1 minute.
-          if retries > 0
-            retries = retries - 1
+          if retries.positive?
+            retries -= 1
             retry
           end
           raise
         rescue Google::Apis::ClientError => e
           raise e unless e.status_code == 404
+
           # if the operation is not found, and we are 'waiting' on it, it might be because it
           # is already finished
           puts "waited on #{result.name} but was not found, so skipping"
         end
 
-        def wait_for_operation(project, pool_name, result, retries=5)
+        def wait_for_operation(project, pool_name, result, retries = 5)
           wait_for_zone_operation(project, zone(pool_name), result, retries)
         end
 
@@ -594,17 +597,17 @@ module Vmpooler
           return nil if pool_configuration.nil?
 
           {
-            'name'              => vm_object.name,
-            'hostname'          => vm_object.hostname,
-            'template'          => pool_configuration && pool_configuration.key?('template') ? pool_configuration['template'] : nil, #TODO: get it from the API, not from config, but this is what vSphere does too!
-            'poolname'          => vm_object.labels && vm_object.labels.key?('pool') ? vm_object.labels['pool'] : nil,
-            'boottime'          => vm_object.creation_timestamp,
-            'status'            => vm_object.status, # One of the following values: PROVISIONING, STAGING, RUNNING, STOPPING, SUSPENDING, SUSPENDED, REPAIRING, and TERMINATED
-            'zone'              => vm_object.zone,
-            'machine_type'      => vm_object.machine_type,
-            'labels'            => vm_object.labels,
+            'name' => vm_object.name,
+            'hostname' => vm_object.hostname,
+            'template' => pool_configuration&.key?('template') ? pool_configuration['template'] : nil, # TODO: get it from the API, not from config, but this is what vSphere does too!
+            'poolname' => vm_object.labels&.key?('pool') ? vm_object.labels['pool'] : nil,
+            'boottime' => vm_object.creation_timestamp,
+            'status' => vm_object.status, # One of the following values: PROVISIONING, STAGING, RUNNING, STOPPING, SUSPENDING, SUSPENDED, REPAIRING, and TERMINATED
+            'zone' => vm_object.zone,
+            'machine_type' => vm_object.machine_type,
+            'labels' => vm_object.labels,
             'label_fingerprint' => vm_object.label_fingerprint
-            #'powerstate' => powerstate
+            # 'powerstate' => powerstate
           }
         end
 
@@ -618,7 +621,7 @@ module Vmpooler
           retry_factor = global_config[:config]['retry_factor'] || 10
           try = 1
           begin
-            scopes = ["https://www.googleapis.com/auth/compute", "https://www.googleapis.com/auth/cloud-platform"]
+            scopes = ['https://www.googleapis.com/auth/compute', 'https://www.googleapis.com/auth/cloud-platform']
 
             authorization = Google::Auth.get_application_default(scopes)
 
@@ -627,7 +630,7 @@ module Vmpooler
 
             metrics.increment('connect.open')
             compute
-          rescue StandardError => e #is that even a thing?
+          rescue StandardError => e # is that even a thing?
             metrics.increment('connect.fail')
             raise e if try >= max_tries
 
@@ -653,18 +656,18 @@ module Vmpooler
 
         # this is used because for one vm, with the same snapshot name there could be multiple snapshots,
         # one for each disk
-        def find_snapshot(vm, snapshotname)
-          filter = "(labels.vm = #{vm}) AND (labels.snapshot_name = #{snapshotname})"
-          snapshot_list = connection.list_snapshots(project,filter: filter)
-          return snapshot_list.items #array of snapshot objects
+        def find_snapshot(vm_name, snapshotname)
+          filter = "(labels.vm = #{vm_name}) AND (labels.snapshot_name = #{snapshotname})"
+          snapshot_list = connection.list_snapshots(project, filter: filter)
+          snapshot_list.items # array of snapshot objects
         end
 
         # find all snapshots ever created for one vm,
         # regardless of snapshot name, for example when deleting it all
-        def find_all_snapshots(vm)
-          filter = "(labels.vm = #{vm})"
-          snapshot_list = connection.list_snapshots(project,filter: filter)
-          return snapshot_list.items #array of snapshot objects
+        def find_all_snapshots(vm_name)
+          filter = "(labels.vm = #{vm_name})"
+          snapshot_list = connection.list_snapshots(project, filter: filter)
+          snapshot_list.items # array of snapshot objects
         end
 
         def disk_name_from_source(attached_disk)
@@ -673,10 +676,10 @@ module Vmpooler
 
         # used in local dev environment, set DEBUG_FLAG=true
         # this way the upstream vmpooler manager does not get polluted with logs
-        def debug_logger(message, send_to_upstream=false)
-          #the default logger is simple and does not enforce debug levels (the first argument)
+        def debug_logger(message, send_to_upstream: false)
+          # the default logger is simple and does not enforce debug levels (the first argument)
           puts message if ENV['DEBUG_FLAG']
-          logger.log("[g]", message) if send_to_upstream
+          logger.log('[g]', message) if send_to_upstream
         end
       end
     end

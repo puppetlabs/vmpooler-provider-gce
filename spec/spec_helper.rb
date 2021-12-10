@@ -1,9 +1,9 @@
-=begin
-require 'simplecov'
-SimpleCov.start do
-  add_filter '/spec/'
-end
-=end
+# frozen_string_literal: true
+
+# require 'simplecov'
+# SimpleCov.start do
+#   add_filter '/spec/'
+# end
 require 'helpers'
 require 'rspec'
 require 'vmpooler'
@@ -19,16 +19,16 @@ def fixtures_dir
   File.join(project_root_dir, 'spec', 'fixtures')
 end
 
-def create_google_client_error(status_code, message, reason="notFound")
-  Google::Apis::ClientError.new(Google::Apis::ClientError, status_code:status_code, body:'{
+def create_google_client_error(status_code, message, reason = 'notFound')
+  Google::Apis::ClientError.new(Google::Apis::ClientError, status_code: status_code, body: '{
   "error": {
-    "code": '+status_code.to_s+',
-    "message": "'+message+'",
+    "code": ' + status_code.to_s + ',
+    "message": "' + message + '",
     "errors": [
       {
-        "message": "'+message+'",
+        "message": "' + message + '",
         "domain": "global",
-        "reason": "'+reason+'"
+        "reason": "' + reason + '"
       }
     ]
   }
