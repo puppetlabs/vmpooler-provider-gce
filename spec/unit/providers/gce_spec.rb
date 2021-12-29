@@ -11,8 +11,7 @@ describe 'Vmpooler::PoolManager::Provider::Gce' do
   let(:metrics) { Vmpooler::Metrics::DummyStatsd.new }
   let(:poolname) { 'debian-9' }
   let(:provider_options) { { 'param' => 'value' } }
-  # let(:project) { 'vmpooler-test' }
-  let(:project) { 'dio-samuel-dev' }
+  let(:project) { 'vmpooler-test' }
   let(:zone) { 'us-west1-b' }
   let(:config) { YAML.load(<<-EOT
 ---
@@ -25,7 +24,6 @@ describe 'Vmpooler::PoolManager::Provider::Gce' do
     project: '#{project}'
     zone: '#{zone}'
     network_name: global/networks/default
-    # network_name: 'projects/itsysopsnetworking/global/networks/shared1'
 :pools:
   - name: '#{poolname}'
     alias: [ 'mockpool' ]
@@ -34,7 +32,6 @@ describe 'Vmpooler::PoolManager::Provider::Gce' do
     timeout: 10
     ready_ttl: 1440
     provider: 'gce'
-    # subnetwork_name: 'projects/itsysopsnetworking/regions/us-west1/subnetworks/vmpooler-test'
     machine_type: 'zones/#{zone}/machineTypes/e2-micro'
 EOT
     )
@@ -63,31 +60,6 @@ EOT
   end
 
   describe '#manual tests live' do
-    skip 'runs in gce' do
-      puts 'creating'
-      result = subject.create_vm(poolname, vmname)
-      subject.get_vm(poolname, vmname)
-      subject.vms_in_pool(poolname)
-
-      puts 'create snapshot w/ one disk'
-      result = subject.create_snapshot(poolname, vmname, 'sams')
-      puts 'create disk'
-      result = subject.create_disk(poolname, vmname, 10)
-      puts 'create snapshot w/ 2 disks'
-      result = subject.create_snapshot(poolname, vmname, 'sams2')
-      puts 'revert snapshot'
-      result = subject.revert_snapshot(poolname, vmname, 'sams')
-      result = subject.destroy_vm(poolname, vmname)
-    end
-
-    skip 'runs existing' do
-      # result = subject.create_snapshot(poolname, vmname, "sams")
-      # result = subject.revert_snapshot(poolname, vmname, "sams")
-      # puts subject.get_vm(poolname, vmname)
-      result = subject.create_vm(poolname, vmname)
-      result = subject.destroy_vm(poolname, vmname)
-    end
-
     context 'in itsysops' do
       let(:vmname) { "instance-15" }
       let(:project) { 'vmpooler-test' }

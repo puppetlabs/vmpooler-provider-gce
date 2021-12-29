@@ -198,7 +198,7 @@ module Vmpooler
             network_interfaces: [network_interfaces],
             labels: { 'vm' => new_vmname, 'pool' => pool_name, project => nil }
           )
-          # TODO: Maybe this will be needed to set the hostname (usually internal DNS name but in opur case for some reason its nil)
+          # TODO: Maybe this will be needed to set the hostname (usually internal DNS name but in our case for some reason its nil)
           # given_hostname = "#{new_vmname}.#{dns_zone}"
           # client.hostname = given_hostname if given_hostname
 
