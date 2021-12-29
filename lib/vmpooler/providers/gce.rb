@@ -2,6 +2,7 @@
 
 require 'googleauth'
 require 'google/apis/compute_v1'
+require "google/cloud/dns"
 require 'bigdecimal'
 require 'bigdecimal/util'
 require 'vmpooler/providers/base'
@@ -44,6 +45,7 @@ module Vmpooler
             { connection: new_conn }
           end
           @redis = redis_connection_pool
+          @dns = Google::Cloud::Dns.new(project_id: project)
         end
 
         # name of the provider class
@@ -66,6 +68,10 @@ module Vmpooler
           provider_config['network_name']
         end
 
+        def subnetwork_name(pool_name)
+          return pool_config(pool_name)['subnetwork_name'] if pool_config(pool_name)['subnetwork_name']
+        end
+
         # main configuration options, overridable for each pool
         def zone(pool_name)
           return pool_config(pool_name)['zone'] if pool_config(pool_name)['zone']
@@ -75,6 +81,14 @@ module Vmpooler
         def machine_type(pool_name)
           return pool_config(pool_name)['machine_type'] if pool_config(pool_name)['machine_type']
           return provider_config['machine_type'] if provider_config['machine_type']
+        end
+
+        def dns_zone
+          provider_config['dns_zone']
+        end
+
+        def dns_zone_resource_name
+          provider_config['dns_zone_resource_name']
         end
 
         # Base methods that are implemented:
@@ -162,6 +176,7 @@ module Vmpooler
           network_interfaces = Google::Apis::ComputeV1::NetworkInterface.new(
             network: network_name
           )
+          network_interfaces.subnetwork=subnetwork_name(pool_name) if subnetwork_name(pool_name)
           init_params = {
             source_image: pool['template'], # The source image to create this disk.
             labels: { 'vm' => new_vmname, 'pool' => pool_name },
@@ -172,19 +187,23 @@ module Vmpooler
             boot: true,
             initialize_params: Google::Apis::ComputeV1::AttachedDiskInitializeParams.new(init_params)
           )
-
           # Assume all pool config is valid i.e. not missing
           client = ::Google::Apis::ComputeV1::Instance.new(
             name: new_vmname,
             machine_type: pool['machine_type'],
             disks: [disk],
             network_interfaces: [network_interfaces],
-            labels: { 'vm' => new_vmname, 'pool' => pool_name }
+            labels: { 'vm' => new_vmname, 'pool' => pool_name, project => nil }
           )
+=begin    TODO: Maybe this will be needed to set the hostname (usually internal DNS name but in opur case for some reason its nil)
+          given_hostname = "#{new_vmname}.#{dns_zone}"
+          client.hostname = given_hostname if given_hostname
+=end
           debug_logger('trigger insert_instance')
           result = connection.insert_instance(project, zone(pool_name), client)
           wait_for_operation(project, pool_name, result)
-          get_vm(pool_name, new_vmname)
+          created_instance = get_vm(pool_name, new_vmname)
+          dns_setup(created_instance)
         end
 
         # create_disk creates an additional disk for an existing VM. It will name the new
@@ -398,8 +417,10 @@ module Vmpooler
 
           unless deleted
             debug_logger("trigger delete_instance #{vm_name}")
+            vm_hash = get_vm(pool_name, vm_name)
             result = connection.delete_instance(project, zone(pool_name), vm_name)
             wait_for_operation(project, pool_name, result, 10)
+            dns_teardown(vm_hash)
           end
 
           # list and delete any leftover disk, for instance if they were detached from the instance
@@ -437,7 +458,7 @@ module Vmpooler
         def vm_ready?(_pool_name, vm_name)
           begin
             # TODO: we could use a healthcheck resource attached to instance
-            open_socket(vm_name, global_config[:config]['domain'])
+            open_socket(vm_name, dns_zone || global_config[:config]['domain'])
           rescue StandardError => _e
             return false
           end
@@ -469,6 +490,9 @@ module Vmpooler
 
               debug_logger("trigger async delete_instance #{vm.name}")
               result = connection.delete_instance(project, zone, vm.name)
+              vm_pool = vm.labels&.key?('pool') ? vm.labels['pool'] : nil
+              existing_vm = generate_vm_hash(vm, vm_pool)
+              dns_teardown(existing_vm)
               result_list << result
             end
             # now check they are done
@@ -529,6 +553,27 @@ module Vmpooler
 
         # END BASE METHODS
 
+        def dns_setup(created_instance)
+          zone = @dns.zone dns_zone_resource_name if dns_zone_resource_name
+          if zone && created_instance
+            name = created_instance['name']
+            change = zone.add name, "A", 60, [created_instance['ip']]
+            debug_logger("#{change.id} - #{change.started_at} - #{change.status}") if change
+          end
+          # TODO: should we catch Google::Cloud::AlreadyExistsError that is thrown when it already exist?
+          # and then delete and recreate?
+          # eg the error is Google::Cloud::AlreadyExistsError: alreadyExists: The resource 'entity.change.additions[0]' named 'instance-8.test.vmpooler.puppet.net. (A)' already exists
+        end
+
+        def dns_teardown(created_instance)
+          zone = @dns.zone dns_zone_resource_name if dns_zone_resource_name
+          if zone && created_instance
+            name = created_instance['name']
+            change = zone.remove name, "A"
+            debug_logger("#{change.id} - #{change.started_at} - #{change.status}") if change
+          end
+        end
+
         def should_be_ignored(item, allowlist)
           return false if allowlist.nil?
 
@@ -565,7 +610,7 @@ module Vmpooler
           if result.error # unsure what kind of error can be stored here
             error_message = ''
             # array of errors, combine them all
-            result.error.each do |error|
+            result.error.errors.each do |error|
               error_message = "#{error_message} #{error.code}:#{error.message}"
             end
             raise "Operation: #{result.description} failed with error: #{error_message}"
@@ -606,7 +651,8 @@ module Vmpooler
             'zone' => vm_object.zone,
             'machine_type' => vm_object.machine_type,
             'labels' => vm_object.labels,
-            'label_fingerprint' => vm_object.label_fingerprint
+            'label_fingerprint' => vm_object.label_fingerprint,
+            'ip' => vm_object.network_interfaces.first.network_ip
             # 'powerstate' => powerstate
           }
         end
@@ -682,6 +728,6 @@ module Vmpooler
           logger.log('[g]', message) if send_to_upstream
         end
       end
-    end
+  end
   end
 end

@@ -8,3 +8,4 @@ Gemfile.local
 results.xml
 /vmpooler.yaml
 .idea
+*.json

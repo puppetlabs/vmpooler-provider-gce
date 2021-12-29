@@ -72,6 +72,13 @@
 #   - network_name
 #     The GCE network_name to use
 #     (required)
+#   - dns_zone_resource_name
+#     The name given to the DNS zone ressource. This is not the domain, but the name identifier of a zone eg example-com
+#     (optional) when not set, the dns setup / teardown is skipped
+#   - dns_zone
+#     The dns zone domain set for the dns_zone_resource_name. This becomes the domain part of the FQDN ie $vm_name.$dns_zone
+#     When setting multiple providers at the same time, this value should be set for each GCE pools.
+#     default to: global config:domain. if dns_zone is set, it overwrites the top-level domain when checking vm_ready?
 # Example:
 
   :gce:
