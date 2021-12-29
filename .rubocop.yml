@@ -36,16 +36,18 @@ Style/SwapValues: # (new in 1.1)
 #disabled
 
 Metrics/AbcSize:
-  Max: 77
+  Enabled: false
 Metrics/ClassLength:
-  Max: 430
+  Enabled: false
 Metrics/CyclomaticComplexity:
-  Max: 14
+  Enabled: false
 Metrics/MethodLength:
-  Max: 48
+  Enabled: false
 Metrics/PerceivedComplexity:
-  Max: 14
+  Enabled: false
 Metrics/ParameterLists:
-  Max: 6
+  Enabled: false
 Layout/LineLength:
-  Max: 220
+  Enabled: false
+Metrics/BlockLength:
+  Enabled: false

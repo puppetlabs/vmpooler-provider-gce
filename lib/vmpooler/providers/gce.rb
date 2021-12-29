@@ -2,7 +2,7 @@
 
 require 'googleauth'
 require 'google/apis/compute_v1'
-require "google/cloud/dns"
+require 'google/cloud/dns'
 require 'bigdecimal'
 require 'bigdecimal/util'
 require 'vmpooler/providers/base'
@@ -45,7 +45,6 @@ module Vmpooler
             { connection: new_conn }
           end
           @redis = redis_connection_pool
-          @dns = Google::Cloud::Dns.new(project_id: project)
         end
 
         # name of the provider class
@@ -57,6 +56,10 @@ module Vmpooler
           @connection_pool.with_metrics do |pool_object|
             return ensured_gce_connection(pool_object)
           end
+        end
+
+        def dns
+          @dns ||= Google::Cloud::Dns.new(project_id: project)
         end
 
         # main configuration options
@@ -176,7 +179,7 @@ module Vmpooler
           network_interfaces = Google::Apis::ComputeV1::NetworkInterface.new(
             network: network_name
           )
-          network_interfaces.subnetwork=subnetwork_name(pool_name) if subnetwork_name(pool_name)
+          network_interfaces.subnetwork = subnetwork_name(pool_name) if subnetwork_name(pool_name)
           init_params = {
             source_image: pool['template'], # The source image to create this disk.
             labels: { 'vm' => new_vmname, 'pool' => pool_name },
@@ -195,15 +198,16 @@ module Vmpooler
             network_interfaces: [network_interfaces],
             labels: { 'vm' => new_vmname, 'pool' => pool_name, project => nil }
           )
-=begin    TODO: Maybe this will be needed to set the hostname (usually internal DNS name but in opur case for some reason its nil)
-          given_hostname = "#{new_vmname}.#{dns_zone}"
-          client.hostname = given_hostname if given_hostname
-=end
+          # TODO: Maybe this will be needed to set the hostname (usually internal DNS name but in opur case for some reason its nil)
+          # given_hostname = "#{new_vmname}.#{dns_zone}"
+          # client.hostname = given_hostname if given_hostname
+
           debug_logger('trigger insert_instance')
           result = connection.insert_instance(project, zone(pool_name), client)
           wait_for_operation(project, pool_name, result)
           created_instance = get_vm(pool_name, new_vmname)
           dns_setup(created_instance)
+          created_instance
         end
 
         # create_disk creates an additional disk for an existing VM. It will name the new
@@ -554,24 +558,24 @@ module Vmpooler
         # END BASE METHODS
 
         def dns_setup(created_instance)
-          zone = @dns.zone dns_zone_resource_name if dns_zone_resource_name
-          if zone && created_instance
-            name = created_instance['name']
-            change = zone.add name, "A", 60, [created_instance['ip']]
-            debug_logger("#{change.id} - #{change.started_at} - #{change.status}") if change
-          end
+          zone = dns.zone dns_zone_resource_name if dns_zone_resource_name
+          return unless zone && created_instance
+
+          name = created_instance['name']
+          change = zone.add name, 'A', 60, [created_instance['ip']]
+          debug_logger("#{change.id} - #{change.started_at} - #{change.status}") if change
           # TODO: should we catch Google::Cloud::AlreadyExistsError that is thrown when it already exist?
           # and then delete and recreate?
           # eg the error is Google::Cloud::AlreadyExistsError: alreadyExists: The resource 'entity.change.additions[0]' named 'instance-8.test.vmpooler.puppet.net. (A)' already exists
         end
 
         def dns_teardown(created_instance)
-          zone = @dns.zone dns_zone_resource_name if dns_zone_resource_name
-          if zone && created_instance
-            name = created_instance['name']
-            change = zone.remove name, "A"
-            debug_logger("#{change.id} - #{change.started_at} - #{change.status}") if change
-          end
+          zone = dns.zone dns_zone_resource_name if dns_zone_resource_name
+          return unless zone && created_instance
+
+          name = created_instance['name']
+          change = zone.remove name, 'A'
+          debug_logger("#{change.id} - #{change.started_at} - #{change.status}") if change
         end
 
         def should_be_ignored(item, allowlist)
@@ -652,7 +656,7 @@ module Vmpooler
             'machine_type' => vm_object.machine_type,
             'labels' => vm_object.labels,
             'label_fingerprint' => vm_object.label_fingerprint,
-            'ip' => vm_object.network_interfaces.first.network_ip
+            'ip' => vm_object.network_interfaces ? vm_object.network_interfaces.first.network_ip : nil
             # 'powerstate' => powerstate
           }
         end
@@ -728,6 +732,6 @@ module Vmpooler
           logger.log('[g]', message) if send_to_upstream
         end
       end
-  end
+    end
   end
 end

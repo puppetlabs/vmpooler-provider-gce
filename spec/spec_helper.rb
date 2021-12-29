@@ -1,15 +1,18 @@
 # frozen_string_literal: true
 
 require 'simplecov'
+=begin
 SimpleCov.start do
   add_filter '/spec/'
 end
+=end
 require 'helpers'
 require 'rspec'
 require 'vmpooler'
 require 'redis'
 require 'vmpooler/metrics'
 require 'computeservice_helper'
+require 'dnsservice_helper'
 
 def project_root_dir
   File.dirname(File.dirname(__FILE__))

@@ -26,8 +26,6 @@ describe 'Vmpooler::PoolManager::Provider::Gce' do
     zone: '#{zone}'
     network_name: global/networks/default
     # network_name: 'projects/itsysopsnetworking/global/networks/shared1'
-    dns_zone_resource_name: 'example-com'
-    dns_zone: 'example.com'
 :pools:
   - name: '#{poolname}'
     alias: [ 'mockpool' ]
@@ -55,6 +53,8 @@ EOT
   end
 
   subject { Vmpooler::PoolManager::Provider::Gce.new(config, logger, metrics, redis_connection_pool, 'gce', provider_options) }
+
+  before(:each) { allow(subject).to receive(:dns).and_return(MockDNS.new()) }
 
   describe '#name' do
     it 'should be gce' do
@@ -89,7 +89,7 @@ EOT
     end
 
     context 'in itsysops' do
-      let(:vmname) { "instance-10" }
+      let(:vmname) { "instance-15" }
       let(:project) { 'vmpooler-test' }
       let(:config) { YAML.load(<<-EOT
 ---
