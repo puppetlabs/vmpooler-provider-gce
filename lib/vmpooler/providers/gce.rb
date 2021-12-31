@@ -86,8 +86,8 @@ module Vmpooler
           return provider_config['machine_type'] if provider_config['machine_type']
         end
 
-        def dns_zone
-          provider_config['dns_zone']
+        def domain
+          provider_config['domain']
         end
 
         def dns_zone_resource_name
@@ -459,7 +459,7 @@ module Vmpooler
         def vm_ready?(_pool_name, vm_name)
           begin
             # TODO: we could use a healthcheck resource attached to instance
-            open_socket(vm_name, dns_zone || global_config[:config]['domain'])
+            open_socket(vm_name, domain || global_config[:config]['domain'])
           rescue StandardError => _e
             return false
           end

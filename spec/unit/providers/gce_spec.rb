@@ -75,7 +75,7 @@ EOT
     zone: '#{zone}'
     network_name: 'projects/itsysopsnetworking/global/networks/shared1'
     dns_zone_resource_name: 'test-vmpooler-puppet-net'
-    dns_zone: 'test.vmpooler.puppet.net'
+    domain: 'test.vmpooler.puppet.net'
 :pools:
   - name: '#{poolname}'
     alias: [ 'mockpool' ]

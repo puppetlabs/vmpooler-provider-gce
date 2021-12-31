@@ -1,11 +1,9 @@
 # frozen_string_literal: true
 
 require 'simplecov'
-=begin
 SimpleCov.start do
   add_filter '/spec/'
 end
-=end
 require 'helpers'
 require 'rspec'
 require 'vmpooler'
