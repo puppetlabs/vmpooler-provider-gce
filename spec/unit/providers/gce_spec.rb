@@ -13,26 +13,26 @@ describe 'Vmpooler::PoolManager::Provider::Gce' do
   let(:provider_options) { { 'param' => 'value' } }
   let(:project) { 'vmpooler-test' }
   let(:zone) { 'us-west1-b' }
-  let(:config) { YAML.load(<<-EOT
----
-:config:
-  max_tries: 3
-  retry_factor: 10
-:providers:
-  :gce:
-    connection_pool_timeout: 1
-    project: '#{project}'
-    zone: '#{zone}'
-    network_name: global/networks/default
-:pools:
-  - name: '#{poolname}'
-    alias: [ 'mockpool' ]
-    template: 'projects/debian-cloud/global/images/family/debian-9'
-    size: 5
-    timeout: 10
-    ready_ttl: 1440
-    provider: 'gce'
-    machine_type: 'zones/#{zone}/machineTypes/e2-micro'
+  let(:config) { YAML.load(<<~EOT
+  ---
+  :config:
+    max_tries: 3
+    retry_factor: 10
+  :providers:
+    :gce:
+      connection_pool_timeout: 1
+      project: '#{project}'
+      zone: '#{zone}'
+      network_name: global/networks/default
+  :pools:
+    - name: '#{poolname}'
+      alias: [ 'mockpool' ]
+      template: 'projects/debian-cloud/global/images/family/debian-9'
+      size: 5
+      timeout: 10
+      ready_ttl: 1440
+      provider: 'gce'
+      machine_type: 'zones/#{zone}/machineTypes/e2-micro'
 EOT
     )
   }
@@ -61,36 +61,38 @@ EOT
 
   describe '#manual tests live' do
     context 'in itsysops' do
-      let(:vmname) { "instance-15" }
+      before(:each) { allow(subject).to receive(:dns).and_call_original }
+      let(:vmname) { "instance-24" }
       let(:project) { 'vmpooler-test' }
-      let(:config) { YAML.load(<<-EOT
----
-:config:
-  max_tries: 3
-  retry_factor: 10
-:providers:
-  :gce:
-    connection_pool_timeout: 1
-    project: '#{project}'
-    zone: '#{zone}'
-    network_name: 'projects/itsysopsnetworking/global/networks/shared1'
-    dns_zone_resource_name: 'test-vmpooler-puppet-net'
-    domain: 'test.vmpooler.puppet.net'
-:pools:
-  - name: '#{poolname}'
-    alias: [ 'mockpool' ]
-    template: 'projects/debian-cloud/global/images/family/debian-9'
-    size: 5
-    timeout: 10
-    ready_ttl: 1440
-    provider: 'gce'
-    subnetwork_name: 'projects/itsysopsnetworking/regions/us-west1/subnetworks/vmpooler-test'
-    machine_type: 'zones/#{zone}/machineTypes/e2-micro'
-      EOT
+      let(:config) { YAML.load(<<~EOT
+      ---
+      :config:
+        max_tries: 3
+        retry_factor: 10
+      :providers:
+        :gce:
+          connection_pool_timeout: 1
+          project: '#{project}'
+          zone: '#{zone}'
+          network_name: 'projects/itsysopsnetworking/global/networks/shared1'
+          dns_zone_resource_name: 'test-vmpooler-puppet-net'
+          domain: 'test.vmpooler.puppet.net'
+      :pools:
+        - name: '#{poolname}'
+          alias: [ 'mockpool' ]
+          template: 'projects/debian-cloud/global/images/family/debian-9'
+          size: 5
+          timeout: 10
+          ready_ttl: 1440
+          provider: 'gce'
+          subnetwork_name: 'projects/itsysopsnetworking/regions/us-west1/subnetworks/vmpooler-test'
+          machine_type: 'zones/#{zone}/machineTypes/e2-micro'
+EOT
       ) }
       skip 'gets a vm' do
         result = subject.create_vm(poolname, vmname)
-        #subject.get_vm(poolname, vmname)
+        #result = subject.destroy_vm(poolname, vmname)
+        subject.get_vm(poolname, vmname)
         #subject.dns_teardown({'name' => vmname})
         # subject.dns_setup({'name' => vmname, 'ip' => '1.2.3.5'})
       end

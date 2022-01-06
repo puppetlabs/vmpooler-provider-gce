@@ -60,6 +60,7 @@ module Vmpooler
 
         def dns
           @dns ||= Google::Cloud::Dns.new(project_id: project)
+          @dns
         end
 
         # main configuration options
@@ -196,7 +197,8 @@ module Vmpooler
             machine_type: pool['machine_type'],
             disks: [disk],
             network_interfaces: [network_interfaces],
-            labels: { 'vm' => new_vmname, 'pool' => pool_name, project => nil }
+            labels: { 'vm' => new_vmname, 'pool' => pool_name },
+            tags: Google::Apis::ComputeV1::Tags.new(items: [project])
           )
 
           debug_logger('trigger insert_instance')
@@ -555,27 +557,28 @@ module Vmpooler
         # END BASE METHODS
 
         def dns_setup(created_instance)
-          zone = dns.zone dns_zone_resource_name if dns_zone_resource_name
-          return unless zone && created_instance && created_instance['name'] && created_instance['ip']
+          dns_zone = dns.zone(dns_zone_resource_name) if dns_zone_resource_name
+          return unless dns_zone && created_instance && created_instance['name'] && created_instance['ip']
 
           name = created_instance['name']
           begin
-            change = zone.add name, 'A', 60, [created_instance['ip']]
-            debug_logger("#{change.id} - #{change.started_at} - #{change.status}") if change
-          rescue AlreadyExistsError => _e
+            change = dns_zone.add(name, 'A', 60, [created_instance['ip']])
+            debug_logger("#{change.id} - #{change.started_at} - #{change.status} DNS address added") if change
+          rescue Google::Cloud::AlreadyExistsError => _e
             # DNS setup is done only for new instances, so in the rare case where a DNS record already exists (it is stale) and we replace it.
             # the error is Google::Cloud::AlreadyExistsError: alreadyExists: The resource 'entity.change.additions[0]' named 'instance-8.test.vmpooler.net. (A)' already exists
-            zone.replace(name, 'A', 60, [created_instance['ip']])
+            change =  dns_zone.replace(name, 'A', 60, [created_instance['ip']])
+            debug_logger("#{change.id} - #{change.started_at} - #{change.status} DNS address previously existed and was replaced") if change
           end
         end
 
         def dns_teardown(created_instance)
-          zone = dns.zone dns_zone_resource_name if dns_zone_resource_name
-          return unless zone && created_instance
+          dns_zone = dns.zone(dns_zone_resource_name) if dns_zone_resource_name
+          return unless dns_zone && created_instance
 
           name = created_instance['name']
-          change = zone.remove name, 'A'
-          debug_logger("#{change.id} - #{change.started_at} - #{change.status}") if change
+          change = dns_zone.remove(name, 'A')
+          debug_logger("#{change.id} - #{change.started_at} - #{change.status} DNS address removed") if change
         end
 
         def should_be_ignored(item, allowlist)

@@ -16,6 +16,7 @@ includedPermissions:
 - compute.instances.get
 - compute.instances.list
 - compute.instances.setLabels
+- compute.instances.setTags
 - compute.instances.start
 - compute.instances.stop
 - compute.snapshots.create
