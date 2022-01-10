@@ -14,6 +14,10 @@ GCE authorization is handled via a service account (or personal account) private
 
 1. GOOGLE_APPLICATION_CREDENTIALS environment variable eg GOOGLE_APPLICATION_CREDENTIALS=/my/home/directory/my_account_key.json
 
+### DNS
+DNS is integrated via Google's CloudDNS service. To enable, a CloudDNS zone name must be provided in the config (see the example yaml file dns_zone_resource_name)
+
+An A record is then created in that zone upon instance creation with the VM's internal IP, and deleted when the instance is destroyed.
 
 ### Labels
 This provider adds labels to all resources that are managed
@@ -26,6 +30,13 @@ This provider adds labels to all resources that are managed
 
 Also see the usage of vmpooler's optional purge_unconfigured_resources, which is used to delete any resource found that
 do not have the pool label, and can be configured to allow a specific list of unconfigured pool names. 
+
+### Pre-requisite
+
+- A service account needs to be created and a private json key generated (see usage section)
+- The service account needs to be given permissions to the project (broad permissions would be compute v1 admin and dns admin). A yaml file is provided that lists the least-privilege permissions needed
+- if using DNS, a DNS zone needs to be created in CloudDNS, and configured in the provider's config section with the name of that zone (dns_zone_resource_name). When not specified, the DNS setup and teardown is skipped.
+
 
 ## License
 

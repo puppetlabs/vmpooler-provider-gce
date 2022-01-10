@@ -2,6 +2,7 @@
 
 require 'googleauth'
 require 'google/apis/compute_v1'
+require 'google/cloud/dns'
 require 'bigdecimal'
 require 'bigdecimal/util'
 require 'vmpooler/providers/base'
@@ -57,6 +58,11 @@ module Vmpooler
           end
         end
 
+        def dns
+          @dns ||= Google::Cloud::Dns.new(project_id: project)
+          @dns
+        end
+
         # main configuration options
         def project
           provider_config['project']
@@ -64,6 +70,10 @@ module Vmpooler
 
         def network_name
           provider_config['network_name']
+        end
+
+        def subnetwork_name(pool_name)
+          return pool_config(pool_name)['subnetwork_name'] if pool_config(pool_name)['subnetwork_name']
         end
 
         # main configuration options, overridable for each pool
@@ -75,6 +85,14 @@ module Vmpooler
         def machine_type(pool_name)
           return pool_config(pool_name)['machine_type'] if pool_config(pool_name)['machine_type']
           return provider_config['machine_type'] if provider_config['machine_type']
+        end
+
+        def domain
+          provider_config['domain']
+        end
+
+        def dns_zone_resource_name
+          provider_config['dns_zone_resource_name']
         end
 
         # Base methods that are implemented:
@@ -117,7 +135,7 @@ module Vmpooler
         #    [String] hostname   : Specifies the hostname of the instance. The specified hostname must be RFC1035 compliant. If hostname is not specified,
         #                          the default hostname is [ INSTANCE_NAME].c.[PROJECT_ID].internal when using the global DNS, and
         #                          [ INSTANCE_NAME].[ZONE].c.[PROJECT_ID].internal when using zonal DNS
-        #    [String] template   : This is the name of template exposed by the API.  It must _match_ the poolname ??? TODO
+        #    [String] template   : This is the name of template
         #    [String] poolname   : Name of the pool the VM as per labels
         #    [Time]   boottime   : Time when the VM was created/booted
         #    [String] status     : One of the following values: PROVISIONING, STAGING, RUNNING, STOPPING, SUSPENDING, SUSPENDED, REPAIRING, and TERMINATED
@@ -162,6 +180,7 @@ module Vmpooler
           network_interfaces = Google::Apis::ComputeV1::NetworkInterface.new(
             network: network_name
           )
+          network_interfaces.subnetwork = subnetwork_name(pool_name) if subnetwork_name(pool_name)
           init_params = {
             source_image: pool['template'], # The source image to create this disk.
             labels: { 'vm' => new_vmname, 'pool' => pool_name },
@@ -172,19 +191,22 @@ module Vmpooler
             boot: true,
             initialize_params: Google::Apis::ComputeV1::AttachedDiskInitializeParams.new(init_params)
           )
-
           # Assume all pool config is valid i.e. not missing
           client = ::Google::Apis::ComputeV1::Instance.new(
             name: new_vmname,
             machine_type: pool['machine_type'],
             disks: [disk],
             network_interfaces: [network_interfaces],
-            labels: { 'vm' => new_vmname, 'pool' => pool_name }
+            labels: { 'vm' => new_vmname, 'pool' => pool_name },
+            tags: Google::Apis::ComputeV1::Tags.new(items: [project])
           )
+
           debug_logger('trigger insert_instance')
           result = connection.insert_instance(project, zone(pool_name), client)
           wait_for_operation(project, pool_name, result)
-          get_vm(pool_name, new_vmname)
+          created_instance = get_vm(pool_name, new_vmname)
+          dns_setup(created_instance)
+          created_instance
         end
 
         # create_disk creates an additional disk for an existing VM. It will name the new
@@ -398,8 +420,10 @@ module Vmpooler
 
           unless deleted
             debug_logger("trigger delete_instance #{vm_name}")
+            vm_hash = get_vm(pool_name, vm_name)
             result = connection.delete_instance(project, zone(pool_name), vm_name)
             wait_for_operation(project, pool_name, result, 10)
+            dns_teardown(vm_hash)
           end
 
           # list and delete any leftover disk, for instance if they were detached from the instance
@@ -437,7 +461,7 @@ module Vmpooler
         def vm_ready?(_pool_name, vm_name)
           begin
             # TODO: we could use a healthcheck resource attached to instance
-            open_socket(vm_name, global_config[:config]['domain'])
+            open_socket(vm_name, domain || global_config[:config]['domain'])
           rescue StandardError => _e
             return false
           end
@@ -469,6 +493,9 @@ module Vmpooler
 
               debug_logger("trigger async delete_instance #{vm.name}")
               result = connection.delete_instance(project, zone, vm.name)
+              vm_pool = vm.labels&.key?('pool') ? vm.labels['pool'] : nil
+              existing_vm = generate_vm_hash(vm, vm_pool)
+              dns_teardown(existing_vm)
               result_list << result
             end
             # now check they are done
@@ -529,6 +556,31 @@ module Vmpooler
 
         # END BASE METHODS
 
+        def dns_setup(created_instance)
+          dns_zone = dns.zone(dns_zone_resource_name) if dns_zone_resource_name
+          return unless dns_zone && created_instance && created_instance['name'] && created_instance['ip']
+
+          name = created_instance['name']
+          begin
+            change = dns_zone.add(name, 'A', 60, [created_instance['ip']])
+            debug_logger("#{change.id} - #{change.started_at} - #{change.status} DNS address added") if change
+          rescue Google::Cloud::AlreadyExistsError => _e
+            # DNS setup is done only for new instances, so in the rare case where a DNS record already exists (it is stale) and we replace it.
+            # the error is Google::Cloud::AlreadyExistsError: alreadyExists: The resource 'entity.change.additions[0]' named 'instance-8.test.vmpooler.net. (A)' already exists
+            change = dns_zone.replace(name, 'A', 60, [created_instance['ip']])
+            debug_logger("#{change.id} - #{change.started_at} - #{change.status} DNS address previously existed and was replaced") if change
+          end
+        end
+
+        def dns_teardown(created_instance)
+          dns_zone = dns.zone(dns_zone_resource_name) if dns_zone_resource_name
+          return unless dns_zone && created_instance
+
+          name = created_instance['name']
+          change = dns_zone.remove(name, 'A')
+          debug_logger("#{change.id} - #{change.started_at} - #{change.status} DNS address removed") if change
+        end
+
         def should_be_ignored(item, allowlist)
           return false if allowlist.nil?
 
@@ -565,7 +617,7 @@ module Vmpooler
           if result.error # unsure what kind of error can be stored here
             error_message = ''
             # array of errors, combine them all
-            result.error.each do |error|
+            result.error.errors.each do |error|
               error_message = "#{error_message} #{error.code}:#{error.message}"
             end
             raise "Operation: #{result.description} failed with error: #{error_message}"
@@ -591,7 +643,7 @@ module Vmpooler
         end
 
         # Return a hash of VM data
-        # Provides vmname, hostname, template, poolname, boottime, status, zone, machine_type information
+        # Provides vmname, hostname, template, poolname, boottime, status, zone, machine_type, labels, label_fingerprint, ip information
         def generate_vm_hash(vm_object, pool_name)
           pool_configuration = pool_config(pool_name)
           return nil if pool_configuration.nil?
@@ -599,15 +651,15 @@ module Vmpooler
           {
             'name' => vm_object.name,
             'hostname' => vm_object.hostname,
-            'template' => pool_configuration&.key?('template') ? pool_configuration['template'] : nil, # TODO: get it from the API, not from config, but this is what vSphere does too!
+            'template' => pool_configuration&.key?('template') ? pool_configuration['template'] : nil, # was expecting to get it from API, not from config, but this is what vSphere does too!
             'poolname' => vm_object.labels&.key?('pool') ? vm_object.labels['pool'] : nil,
             'boottime' => vm_object.creation_timestamp,
             'status' => vm_object.status, # One of the following values: PROVISIONING, STAGING, RUNNING, STOPPING, SUSPENDING, SUSPENDED, REPAIRING, and TERMINATED
             'zone' => vm_object.zone,
             'machine_type' => vm_object.machine_type,
             'labels' => vm_object.labels,
-            'label_fingerprint' => vm_object.label_fingerprint
-            # 'powerstate' => powerstate
+            'label_fingerprint' => vm_object.label_fingerprint,
+            'ip' => vm_object.network_interfaces ? vm_object.network_interfaces.first.network_ip : nil
           }
         end
 

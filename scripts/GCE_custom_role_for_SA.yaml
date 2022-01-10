@@ -1,0 +1,39 @@
+title: Custom vmpooler provider
+description: for the vmpooler provider
+stage: GA
+includedPermissions:
+- compute.disks.create
+- compute.disks.createSnapshot
+- compute.disks.delete
+- compute.disks.get
+- compute.disks.list
+- compute.disks.setLabels
+- compute.disks.use
+- compute.instances.attachDisk
+- compute.instances.create
+- compute.instances.delete
+- compute.instances.detachDisk
+- compute.instances.get
+- compute.instances.list
+- compute.instances.setLabels
+- compute.instances.setTags
+- compute.instances.start
+- compute.instances.stop
+- compute.snapshots.create
+- compute.snapshots.delete
+- compute.snapshots.get
+- compute.snapshots.list
+- compute.snapshots.setLabels
+- compute.snapshots.useReadOnly
+- compute.subnetworks.use
+- compute.zoneOperations.get
+- dns.changes.create
+- dns.changes.get
+- dns.changes.list
+- dns.managedZones.get
+- dns.managedZones.list
+- dns.resourceRecordSets.create
+- dns.resourceRecordSets.update
+- dns.resourceRecordSets.delete
+- dns.resourceRecordSets.get
+- dns.resourceRecordSets.list

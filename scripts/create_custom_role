@@ -1,0 +1,5 @@
+#!/bin/bash
+#set your project name in GCE here
+project_id="vmpooler-test"
+#this creates a custom role, that should then be applied to a service account used to run the API requests.
+gcloud iam roles create Customvmpoolerprovider --project=$project-id --file=GCE_custom_role_for_SA.yaml
