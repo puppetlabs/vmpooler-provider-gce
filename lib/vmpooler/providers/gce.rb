@@ -567,7 +567,7 @@ module Vmpooler
           rescue Google::Cloud::AlreadyExistsError => _e
             # DNS setup is done only for new instances, so in the rare case where a DNS record already exists (it is stale) and we replace it.
             # the error is Google::Cloud::AlreadyExistsError: alreadyExists: The resource 'entity.change.additions[0]' named 'instance-8.test.vmpooler.net. (A)' already exists
-            change =  dns_zone.replace(name, 'A', 60, [created_instance['ip']])
+            change = dns_zone.replace(name, 'A', 60, [created_instance['ip']])
             debug_logger("#{change.id} - #{change.started_at} - #{change.status} DNS address previously existed and was replaced") if change
           end
         end
