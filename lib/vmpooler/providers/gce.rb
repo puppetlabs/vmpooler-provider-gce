@@ -191,9 +191,13 @@ module Vmpooler
             boot: true,
             initialize_params: Google::Apis::ComputeV1::AttachedDiskInitializeParams.new(init_params)
           )
+          append_domain = domain || global_config[:config]['domain']
+          fqdn = "#{new_vmname}.#{append_domain}" if append_domain
+
           # Assume all pool config is valid i.e. not missing
           client = ::Google::Apis::ComputeV1::Instance.new(
             name: new_vmname,
+            hostname: fqdn,
             machine_type: pool['machine_type'],
             disks: [disk],
             network_interfaces: [network_interfaces],
