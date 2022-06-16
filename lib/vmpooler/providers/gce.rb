@@ -181,15 +181,18 @@ module Vmpooler
             network: network_name
           )
           network_interfaces.subnetwork = subnetwork_name(pool_name) if subnetwork_name(pool_name)
-          init_params = {
+          init_params = Google::Apis::ComputeV1::AttachedDiskInitializeParams.new(
             source_image: pool['template'], # The source image to create this disk.
             labels: { 'vm' => new_vmname, 'pool' => pool_name },
             disk_name: "#{new_vmname}-disk0"
-          }
+          )
+          if pool['disk_type'] && !pool['disk_type'].empty?
+            init_params.disk_type = "https://www.googleapis.com/compute/v1/projects/#{project}/zones/#{zone(pool_name)}/diskTypes/#{pool['disk_type']}"
+          end
           disk = Google::Apis::ComputeV1::AttachedDisk.new(
             auto_delete: true,
             boot: true,
-            initialize_params: Google::Apis::ComputeV1::AttachedDiskInitializeParams.new(init_params)
+            initialize_params: init_params
           )
           append_domain = domain || global_config[:config]['domain']
           fqdn = "#{new_vmname}.#{append_domain}" if append_domain

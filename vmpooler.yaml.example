@@ -146,6 +146,10 @@
 #       (optional: default is global provider zone value)
 #     - machine_type
 #       Full or partial URL of the machine type resource to use for this instance, in the format: zones/zone/machineTypes/machine-type
+#     - disk_type
+#       the disk type to use, see https://cloud.google.com/compute/docs/disks one of
+#         pd-standard, pd-balanced, pd-ssd or pd-extreme
+#       (optional, when nil or empty defaults to pd-standard)
 # Example:
 
 :pools:

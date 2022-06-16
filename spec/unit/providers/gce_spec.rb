@@ -62,7 +62,7 @@ EOT
   describe '#manual tests live' do
     context 'in itsysops' do
       before(:each) { allow(subject).to receive(:dns).and_call_original }
-      let(:vmname) { "instance-24" }
+      let(:vmname) { "instance-27" }
       let(:project) { 'vmpooler-test' }
       let(:config) { YAML.load(<<~EOT
       ---
@@ -87,6 +87,7 @@ EOT
           provider: 'gce'
           subnetwork_name: 'projects/itsysopsnetworking/regions/us-west1/subnetworks/vmpooler-test'
           machine_type: 'zones/#{zone}/machineTypes/e2-micro'
+          disk_type: 'pd-ssd'
 EOT
       ) }
       skip 'gets a vm' do
