@@ -186,9 +186,11 @@ module Vmpooler
             labels: { 'vm' => new_vmname, 'pool' => pool_name },
             disk_name: "#{new_vmname}-disk0"
           )
+          # rubocop:disable Style/IfUnlessModifier
           if pool['disk_type'] && !pool['disk_type'].empty?
             init_params.disk_type = "https://www.googleapis.com/compute/v1/projects/#{project}/zones/#{zone(pool_name)}/diskTypes/#{pool['disk_type']}"
           end
+          # rubocop:enable Style/IfUnlessModifier
           disk = Google::Apis::ComputeV1::AttachedDisk.new(
             auto_delete: true,
             boot: true,
