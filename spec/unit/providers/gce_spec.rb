@@ -62,7 +62,7 @@ EOT
   describe '#manual tests live' do
     context 'in itsysops' do
       before(:each) { allow(subject).to receive(:dns).and_call_original }
-      let(:vmname) { "instance-27" }
+      let(:vmname) { "instance-31" }
       let(:project) { 'vmpooler-test' }
       let(:config) { YAML.load(<<~EOT
       ---
@@ -75,8 +75,8 @@ EOT
           project: '#{project}'
           zone: '#{zone}'
           network_name: 'projects/itsysopsnetworking/global/networks/shared1'
-          dns_zone_resource_name: 'test-vmpooler-puppet-net'
-          domain: 'test.vmpooler.puppet.net'
+          dns_zone_resource_name: 'vmpooler-test-puppet-net'
+          domain: 'vmpooler-test.puppet.net'
       :pools:
         - name: '#{poolname}'
           alias: [ 'mockpool' ]
@@ -93,8 +93,8 @@ EOT
       skip 'gets a vm' do
         result = subject.create_vm(poolname, vmname)
         #result = subject.destroy_vm(poolname, vmname)
-        subject.get_vm(poolname, vmname)
-        #subject.dns_teardown({'name' => vmname})
+        # subject.get_vm(poolname, vmname)
+        subject.dns_teardown({'name' => vmname})
         # subject.dns_setup({'name' => vmname, 'ip' => '1.2.3.5'})
       end
     end
