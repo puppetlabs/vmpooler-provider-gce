@@ -2,7 +2,7 @@
 
 require 'googleauth'
 require 'google/apis/compute_v1'
-require 'google/cloud/dns'
+require 'vmpooler/cloud_dns'
 require 'bigdecimal'
 require 'bigdecimal/util'
 require 'vmpooler/providers/base'
@@ -56,11 +56,6 @@ module Vmpooler
           @connection_pool.with_metrics do |pool_object|
             return ensured_gce_connection(pool_object)
           end
-        end
-
-        def dns
-          @dns ||= Google::Cloud::Dns.new(project_id: project)
-          @dns
         end
 
         # main configuration options
@@ -566,28 +561,13 @@ module Vmpooler
         # END BASE METHODS
 
         def dns_setup(created_instance)
-          dns_zone = dns.zone(dns_zone_resource_name) if dns_zone_resource_name
-          return unless dns_zone && created_instance && created_instance['name'] && created_instance['ip']
-
-          name = created_instance['name']
-          begin
-            change = dns_zone.add(name, 'A', 60, [created_instance['ip']])
-            debug_logger("#{change.id} - #{change.started_at} - #{change.status} DNS address added") if change
-          rescue Google::Cloud::AlreadyExistsError => _e
-            # DNS setup is done only for new instances, so in the rare case where a DNS record already exists (it is stale) and we replace it.
-            # the error is Google::Cloud::AlreadyExistsError: alreadyExists: The resource 'entity.change.additions[0]' named 'instance-8.test.vmpooler.net. (A)' already exists
-            change = dns_zone.replace(name, 'A', 60, [created_instance['ip']])
-            debug_logger("#{change.id} - #{change.started_at} - #{change.status} DNS address previously existed and was replaced") if change
-          end
+          dns = Vmpooler::PoolManager::CloudDns.new(project, dns_zone_resource_name)
+          dns.dns_create_or_replace(created_instance)
         end
 
         def dns_teardown(created_instance)
-          dns_zone = dns.zone(dns_zone_resource_name) if dns_zone_resource_name
-          return unless dns_zone && created_instance
-
-          name = created_instance['name']
-          change = dns_zone.remove(name, 'A')
-          debug_logger("#{change.id} - #{change.started_at} - #{change.status} DNS address removed") if change
+          dns = Vmpooler::PoolManager::CloudDns.new(project, dns_zone_resource_name)
+          dns.dns_teardown(created_instance)
         end
 
         def should_be_ignored(item, allowlist)
