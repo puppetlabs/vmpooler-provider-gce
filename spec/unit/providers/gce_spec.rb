@@ -267,6 +267,7 @@ EOT
         result = MockResult.new
         result.status = 'DONE'
         allow(connection).to receive(:insert_instance).and_return(result)
+        allow(subject).to receive(:dns_setup).and_return(true)
       end
 
       it 'should return a hash' do
@@ -313,6 +314,7 @@ EOT
         result.status = 'DONE'
         allow(subject).to receive(:wait_for_operation).and_return(result)
         allow(connection).to receive(:delete_instance).and_return(result)
+        allow(subject).to receive(:dns_teardown).and_return(true)
       end
 
       it 'should return true' do
@@ -584,6 +586,7 @@ EOT
 
     before(:each) do
       allow(subject).to receive(:connect_to_gce).and_return(connection)
+      allow(subject).to receive(:dns_teardown).and_return(true)
     end
 
     context 'with empty allowlist' do

@@ -5,9 +5,10 @@ require 'google/cloud/dns'
 
 module Vmpooler
   class PoolManager
+    # This class interacts with GCP Cloud DNS to create or delete records.
     class CloudDns
       def initialize(project, dns_zone_resource_name)
-        @dns ||= Google::Cloud::Dns.new(project_id: project)
+        @dns = Google::Cloud::Dns.new(project_id: project)
         @dns_zone_resource_name = dns_zone_resource_name
       end
 
