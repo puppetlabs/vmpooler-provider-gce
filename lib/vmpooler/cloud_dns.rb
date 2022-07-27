@@ -16,6 +16,7 @@ module Vmpooler
         dns_zone = @dns.zone(@dns_zone_resource_name) if @dns_zone_resource_name
         return unless dns_zone && created_instance && created_instance['name'] && created_instance['ip']
 
+        retries = 0
         name = created_instance['name']
         begin
           change = dns_zone.add(name, 'A', 60, [created_instance['ip']])
@@ -25,6 +26,12 @@ module Vmpooler
           # the error is Google::Cloud::AlreadyExistsError: alreadyExists: The resource 'entity.change.additions[0]' named 'instance-8.test.vmpooler.net. (A)' already exists
           change = dns_zone.replace(name, 'A', 60, [created_instance['ip']])
           debug_logger("#{change.id} - #{change.started_at} - #{change.status} DNS address previously existed and was replaced") if change
+        rescue Google::Cloud::FailedPreconditionError => e
+          # this error was experienced intermittently, will retry to see if it can complete successfully
+          # the error is Google::Cloud::FailedPreconditionError: conditionNotMet: Precondition not met for 'entity.change.deletions[0]'
+          debug_logger("DNS create failed, retrying error: #{e}")
+          sleep 5
+          retry if (retries += 1) < 30
         end
       end
 
