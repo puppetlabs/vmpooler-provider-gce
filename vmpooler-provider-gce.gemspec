@@ -16,7 +16,7 @@ Gem::Specification.new do |s|
   s.files         = Dir[ "lib/**/*" ]
   s.require_paths = ["lib"]
   s.add_dependency "google-apis-compute_v1", "~> 0.14"
-  s.add_dependency "googleauth", ">= 0.16.2", "< 1.3.0"
+  s.add_dependency "googleauth", ">= 0.16.2", "< 1.4.0"
   s.add_dependency 'vmpooler', '~> 3.0'
 
   # Testing dependencies
