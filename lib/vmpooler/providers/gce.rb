@@ -1,10 +1,10 @@
 # frozen_string_literal: true
 
-require 'googleauth'
-require 'google/apis/compute_v1'
-require 'vmpooler/cloud_dns'
 require 'bigdecimal'
 require 'bigdecimal/util'
+require 'google/apis/compute_v1'
+require 'googleauth'
+require 'vmpooler/dns/base'
 require 'vmpooler/providers/base'
 
 module Vmpooler
@@ -209,7 +209,11 @@ module Vmpooler
           result = connection.insert_instance(project, zone(pool_name), client)
           wait_for_operation(project, pool_name, result)
           created_instance = get_vm(pool_name, new_vmname)
-          dns_setup(created_instance)
+          # Exceptions thrown if ip does not exist in preexisting vm? Redis::CommandError: ERR wrong number of arguments for 'hset' command
+          @redis.with_metrics do |redis|
+            ip = created_instance['ip']
+            redis.hset("vmpooler__vm__#{new_vmname}", 'ip', ip)
+          end
           created_instance
         end
 
@@ -427,7 +431,6 @@ module Vmpooler
             vm_hash = get_vm(pool_name, vm_name)
             result = connection.delete_instance(project, zone(pool_name), vm_name)
             wait_for_operation(project, pool_name, result, 10)
-            dns_teardown(vm_hash)
           end
 
           # list and delete any leftover disk, for instance if they were detached from the instance
@@ -499,7 +502,6 @@ module Vmpooler
               result = connection.delete_instance(project, zone, vm.name)
               vm_pool = vm.labels&.key?('pool') ? vm.labels['pool'] : nil
               existing_vm = generate_vm_hash(vm, vm_pool)
-              dns_teardown(existing_vm)
               result_list << result
             end
             # now check they are done
@@ -559,16 +561,6 @@ module Vmpooler
         end
 
         # END BASE METHODS
-
-        def dns_setup(created_instance)
-          dns = Vmpooler::PoolManager::CloudDns.new(project, dns_zone_resource_name)
-          dns.dns_create_or_replace(created_instance)
-        end
-
-        def dns_teardown(created_instance)
-          dns = Vmpooler::PoolManager::CloudDns.new(project, dns_zone_resource_name)
-          dns.dns_teardown(created_instance)
-        end
 
         def should_be_ignored(item, allowlist)
           return false if allowlist.nil?
