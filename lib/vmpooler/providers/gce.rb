@@ -82,12 +82,9 @@ module Vmpooler
           return provider_config['machine_type'] if provider_config['machine_type']
         end
 
-        def domain
-          provider_config['domain']
-        end
-
-        def dns_zone_resource_name
-          provider_config['dns_zone_resource_name']
+        def domain(pool_name)
+          dns_plugin_name = pool_config(pool_name)['dns_plugin']
+          return dns_config(dns_plugin_name)
         end
 
         # Base methods that are implemented:
@@ -191,7 +188,7 @@ module Vmpooler
             boot: true,
             initialize_params: init_params
           )
-          append_domain = domain || global_config[:config]['domain']
+          append_domain = domain(pool_name)
           fqdn = "#{new_vmname}.#{append_domain}" if append_domain
 
           # Assume all pool config is valid i.e. not missing
@@ -468,7 +465,8 @@ module Vmpooler
         def vm_ready?(_pool_name, vm_name)
           begin
             # TODO: we could use a healthcheck resource attached to instance
-            open_socket(vm_name, domain || global_config[:config]['domain'])
+            domain = domain(_pool_name)
+            open_socket(vm_name, domain)
           rescue StandardError => _e
             return false
           end
