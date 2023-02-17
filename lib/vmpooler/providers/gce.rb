@@ -206,12 +206,12 @@ module Vmpooler
           result = connection.insert_instance(project, zone(pool_name), client)
           wait_for_operation(project, pool_name, result)
           created_instance = get_vm(pool_name, new_vmname)
-          # Exceptions thrown if ip does not exist in preexisting vm? Redis::CommandError: ERR wrong number of arguments for 'hset' command
-          @redis.with_metrics do |redis|
-            ip = created_instance['ip']
-            redis.hset("vmpooler__vm__#{new_vmname}", 'ip', ip)
-          end
           created_instance
+        end
+
+        def get_vm_ip_address(vm_name, pool_name)
+          vm_object = get_vm(pool_name, vm_name)
+          return vm_object['ip']
         end
 
         # create_disk creates an additional disk for an existing VM. It will name the new
