@@ -17,7 +17,6 @@ Gem::Specification.new do |s|
   s.require_paths = ["lib"]
   s.add_dependency "google-apis-compute_v1", "~> 0.14"
   s.add_dependency "googleauth", ">= 0.16.2", "< 1.3.0"
-  s.add_dependency "google-cloud-dns", "~> 0.35.1"
   s.add_dependency 'vmpooler', '>= 1.3.0', '~> 2.3'
 
   # Testing dependencies

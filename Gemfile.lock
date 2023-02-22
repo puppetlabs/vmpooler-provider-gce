@@ -3,7 +3,6 @@ PATH
   specs:
     vmpooler-provider-gce (0.5.0)
       google-apis-compute_v1 (~> 0.14)
-      google-cloud-dns (~> 0.35.1)
       googleauth (>= 0.16.2, < 1.3.0)
       vmpooler (~> 2.3, >= 1.3.0)
 
@@ -39,19 +38,8 @@ GEM
       retriable (>= 2.0, < 4.a)
       rexml
       webrick
-    google-apis-dns_v1 (0.31.0)
-      google-apis-core (>= 0.11.0, < 2.a)
-    google-cloud-core (1.6.0)
-      google-cloud-env (~> 1.0)
-      google-cloud-errors (~> 1.0)
-    google-cloud-dns (0.35.1)
-      google-apis-dns_v1 (~> 0.1)
-      google-cloud-core (~> 1.6)
-      googleauth (>= 0.16.2, < 2.a)
-      zonefile (~> 1.04)
     google-cloud-env (1.6.0)
       faraday (>= 0.17.3, < 3.0)
-    google-cloud-errors (1.3.1)
     googleauth (1.2.0)
       faraday (>= 0.17.3, < 3.a)
       jwt (>= 1.4, < 3.0)
@@ -158,9 +146,9 @@ GEM
       rubocop-ast (>= 1.0.1)
       ruby-progressbar (~> 1.7)
       unicode-display_width (>= 1.4.0, < 2.0)
-    rubocop-ast (1.27.0)
+    rubocop-ast (1.26.0)
       parser (>= 3.2.1.0)
-    ruby-progressbar (1.12.0)
+    ruby-progressbar (1.11.0)
     ruby2_keywords (0.0.5)
     signet (0.17.0)
       addressable (~> 2.8)
@@ -184,7 +172,7 @@ GEM
       ffi
     statsd-ruby (1.5.0)
     thor (1.2.1)
-    thrift (0.18.1)
+    thrift (0.18.0)
     tilt (2.1.0)
     trailblazer-option (0.1.2)
     uber (0.1.0)
@@ -214,7 +202,6 @@ GEM
     yarjuf (2.0.0)
       builder
       rspec (~> 3)
-    zonefile (1.06)
 
 PLATFORMS
   universal-java-1.8
@@ -233,4 +220,4 @@ DEPENDENCIES
   yarjuf (>= 2.0)
 
 BUNDLED WITH
-   2.4.5
+   2.4.7
