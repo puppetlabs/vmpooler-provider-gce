@@ -10,7 +10,6 @@ require 'vmpooler'
 require 'redis'
 require 'vmpooler/metrics'
 require 'computeservice_helper'
-require 'dnsservice_helper'
 
 def project_root_dir
   File.dirname(File.dirname(__FILE__))
