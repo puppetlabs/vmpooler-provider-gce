@@ -84,7 +84,7 @@ module Vmpooler
 
         def domain(pool_name)
           dns_plugin_name = pool_config(pool_name)['dns_plugin']
-          return dns_config(dns_plugin_name)
+          dns_config(dns_plugin_name)
         end
 
         # Base methods that are implemented:
@@ -205,13 +205,12 @@ module Vmpooler
           debug_logger('trigger insert_instance')
           result = connection.insert_instance(project, zone(pool_name), client)
           wait_for_operation(project, pool_name, result)
-          created_instance = get_vm(pool_name, new_vmname)
-          created_instance
+          get_vm(pool_name, new_vmname)
         end
 
         def get_vm_ip_address(vm_name, pool_name)
           vm_object = get_vm(pool_name, vm_name)
-          return vm_object['ip']
+          vm_object['ip']
         end
 
         # create_disk creates an additional disk for an existing VM. It will name the new
@@ -425,7 +424,6 @@ module Vmpooler
 
           unless deleted
             debug_logger("trigger delete_instance #{vm_name}")
-            vm_hash = get_vm(pool_name, vm_name)
             result = connection.delete_instance(project, zone(pool_name), vm_name)
             wait_for_operation(project, pool_name, result, 10)
           end
@@ -462,10 +460,10 @@ module Vmpooler
           true
         end
 
-        def vm_ready?(_pool_name, vm_name)
+        def vm_ready?(pool_name, vm_name)
           begin
             # TODO: we could use a healthcheck resource attached to instance
-            domain = domain(_pool_name)
+            domain = domain(pool_name)
             open_socket(vm_name, domain)
           rescue StandardError => _e
             return false
@@ -498,8 +496,6 @@ module Vmpooler
 
               debug_logger("trigger async delete_instance #{vm.name}")
               result = connection.delete_instance(project, zone, vm.name)
-              vm_pool = vm.labels&.key?('pool') ? vm.labels['pool'] : nil
-              existing_vm = generate_vm_hash(vm, vm_pool)
               result_list << result
             end
             # now check they are done
