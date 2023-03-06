@@ -683,15 +683,13 @@ module Vmpooler
 
         # This should supercede the open_socket method in the Pool Manager
         def open_socket(host, domain = nil, timeout = 5, port = 22, &_block)
-          Timeout.timeout(timeout) do
-            target_host = host
-            target_host = "#{host}.#{domain}" if domain
-            sock = TCPSocket.new target_host, port
-            begin
-              yield sock if block_given?
-            ensure
-              sock.close
-            end
+          target_host = host
+          target_host = "#{host}.#{domain}" if domain
+          sock = TCPSocket.new(target_host, port, connect_timeout: timeout)
+          begin
+            yield sock if block_given?
+          ensure
+            sock.close
           end
         end
 
