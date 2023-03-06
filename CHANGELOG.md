@@ -1,11 +1,16 @@
 # Changelog
 
-## [Unreleased](https://github.com/puppetlabs/vmpooler-provider-gce/tree/HEAD)
+## [0.5.0](https://github.com/puppetlabs/vmpooler-provider-gce/tree/0.5.0) (2023-03-06)
 
-[Full Changelog](https://github.com/puppetlabs/vmpooler-provider-gce/compare/0.4.0...HEAD)
+[Full Changelog](https://github.com/puppetlabs/vmpooler-provider-gce/compare/0.4.0...0.5.0)
+
+**Implemented enhancements:**
+
+- \(RE-15161\) Update to jruby-9.4.1.0 and move socket timeout to new method. [\#22](https://github.com/puppetlabs/vmpooler-provider-gce/pull/22) ([isaac-hammes](https://github.com/isaac-hammes))
 
 **Merged pull requests:**
 
+- Add docs and update actions [\#20](https://github.com/puppetlabs/vmpooler-provider-gce/pull/20) ([yachub](https://github.com/yachub))
 - \(RE-15111\) Migrate Snyk to Mend Scanning [\#19](https://github.com/puppetlabs/vmpooler-provider-gce/pull/19) ([yachub](https://github.com/yachub))
 - \(RE-14811\) Remove DIO as codeowners [\#17](https://github.com/puppetlabs/vmpooler-provider-gce/pull/17) ([yachub](https://github.com/yachub))
 - Add Snyk action [\#16](https://github.com/puppetlabs/vmpooler-provider-gce/pull/16) ([yachub](https://github.com/yachub))
