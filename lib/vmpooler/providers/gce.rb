@@ -461,6 +461,7 @@ module Vmpooler
         end
 
         def vm_ready?(pool_name, vm_name)
+          debug_logger('vm_ready?')
           begin
             # TODO: we could use a healthcheck resource attached to instance
             domain = domain(pool_name)
