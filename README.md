@@ -2,6 +2,7 @@
 
 - [vmpooler-provider-gce](#vmpooler-provider-gce)
   - [Usage](#usage)
+    - [Migrating to v1](#migrating-to-v1)
     - [DNS](#dns)
     - [Labels](#labels)
     - [Pre-requisite](#pre-requisite)
@@ -22,6 +23,42 @@ Examples of deploying VMPooler with extra providers can be found in the [puppetl
 GCE authorization is handled via a service account (or personal account) private key (json format) and can be configured via
 
 1. GOOGLE_APPLICATION_CREDENTIALS environment variable eg GOOGLE_APPLICATION_CREDENTIALS=/my/home/directory/my_account_key.json
+
+### Migrating to v1
+
+Starting with the v1.x release, management of DNS records has been extracted from this compute provider and implemented as DNS plugins, similar to compute providers. This means each pool configuration should be pointing to a configuration object in `:dns_config` to determine it's method of record management.
+
+For those using DNS management via this provider, the DNS related options should be moved under `:dns_configs:<INSERT_YOUR_OWN_SYMBOL>` with the value for `dns_class`.
+
+For example, the following keys in a v0.x GCE provider config:
+
+```yaml
+:providers:
+  :gce:
+    domain: vmpooler.example.com
+    dns_zone_resource_name: vmpooler-example-com
+```
+
+Would be moved to:
+
+```yaml
+:dns_configs:
+  :example:
+    dns_class: gcp-clouddns
+    project: jake-vmpooler-dev
+    domain: vmpooler.example.com
+    zone_name: vmpooler-example-com
+```
+
+Then any pools that should have records created via the dns config above should now reference the named dns config in the `dns_plugin` key:
+
+```yaml
+:pools:
+  - name: 'debian-11-x86_64'
+    dns_plugin: 'example'
+```
+
+For complete examples on how to use the GCP DNS plugin see [vmpooler-dns-gcp](https://github.com/puppetlabs/vmpooler-dns-gcp).
 
 ### DNS
 DNS is integrated via Google's CloudDNS service. To enable, a CloudDNS zone name must be provided in the config (see the example yaml file dns_zone_resource_name)

@@ -18,6 +18,11 @@ describe 'Vmpooler::PoolManager::Provider::Gce' do
   :config:
     max_tries: 3
     retry_factor: 10
+  :dns_configs:
+    :gcp-clouddns:
+      project: vmpooler-test
+      domain: vmpooler.example.com
+      dns_zone_resource_name: vmpooler-example-com
   :providers:
     :gce:
       connection_pool_timeout: 1
@@ -32,6 +37,7 @@ describe 'Vmpooler::PoolManager::Provider::Gce' do
       timeout: 10
       ready_ttl: 1440
       provider: 'gce'
+      dns_config: 'gcp-clouddns'
       machine_type: 'zones/#{zone}/machineTypes/e2-micro'
 EOT
     )
@@ -51,8 +57,6 @@ EOT
 
   subject { Vmpooler::PoolManager::Provider::Gce.new(config, logger, metrics, redis_connection_pool, 'gce', provider_options) }
 
-  before(:each) { allow(subject).to receive(:dns).and_return(MockDNS.new()) }
-
   describe '#name' do
     it 'should be gce' do
       expect(subject.name).to eq('gce')
@@ -61,7 +65,6 @@ EOT
 
   describe '#manual tests live' do
     context 'in itsysops' do
-      before(:each) { allow(subject).to receive(:dns).and_call_original }
       let(:vmname) { "instance-31" }
       let(:project) { 'vmpooler-test' }
       let(:config) { YAML.load(<<~EOT
@@ -69,14 +72,17 @@ EOT
       :config:
         max_tries: 3
         retry_factor: 10
+      :dns_configs:
+        :gcp-clouddns:
+          project: vmpooler-test
+          domain: vmpooler.example.com
+          dns_zone_resource_name: vmpooler-example-com
       :providers:
         :gce:
           connection_pool_timeout: 1
           project: '#{project}'
           zone: '#{zone}'
           network_name: 'projects/itsysopsnetworking/global/networks/shared1'
-          dns_zone_resource_name: 'vmpooler-test-puppet-net'
-          domain: 'vmpooler-test.puppet.net'
       :pools:
         - name: '#{poolname}'
           alias: [ 'mockpool' ]
@@ -85,6 +91,7 @@ EOT
           timeout: 10
           ready_ttl: 1440
           provider: 'gce'
+          dns_config: 'gcp-clouddns'
           subnetwork_name: 'projects/itsysopsnetworking/regions/us-west1/subnetworks/vmpooler-test'
           machine_type: 'zones/#{zone}/machineTypes/e2-micro'
           disk_type: 'pd-ssd'
@@ -92,10 +99,6 @@ EOT
       ) }
       skip 'gets a vm' do
         result = subject.create_vm(poolname, vmname)
-        #result = subject.destroy_vm(poolname, vmname)
-        # subject.get_vm(poolname, vmname)
-        subject.dns_teardown({'name' => vmname})
-        # subject.dns_setup({'name' => vmname, 'ip' => '1.2.3.5'})
       end
     end
   end
@@ -267,7 +270,6 @@ EOT
         result = MockResult.new
         result.status = 'DONE'
         allow(connection).to receive(:insert_instance).and_return(result)
-        allow(subject).to receive(:dns_setup).and_return(true)
       end
 
       it 'should return a hash' do
@@ -314,7 +316,6 @@ EOT
         result.status = 'DONE'
         allow(subject).to receive(:wait_for_operation).and_return(result)
         allow(connection).to receive(:delete_instance).and_return(result)
-        allow(subject).to receive(:dns_teardown).and_return(true)
       end
 
       it 'should return true' do
@@ -349,7 +350,11 @@ EOT
   end
 
   describe '#vm_ready?' do
-    let(:domain) { nil }
+    let(:domain) { 'vmpooler.example.com' }
+    before(:each) do
+      allow(subject).to receive(:domain).and_return('vmpooler.example.com')
+    end
+
     context 'When a VM is ready' do
       before(:each) do
         expect(subject).to receive(:open_socket).with(vmname, domain)
@@ -586,7 +591,6 @@ EOT
 
     before(:each) do
       allow(subject).to receive(:connect_to_gce).and_return(connection)
-      allow(subject).to receive(:dns_teardown).and_return(true)
     end
 
     context 'with empty allowlist' do

@@ -1,10 +1,10 @@
 # frozen_string_literal: true
 
-require 'googleauth'
-require 'google/apis/compute_v1'
-require 'vmpooler/cloud_dns'
 require 'bigdecimal'
 require 'bigdecimal/util'
+require 'google/apis/compute_v1'
+require 'googleauth'
+require 'vmpooler/dns/base'
 require 'vmpooler/providers/base'
 
 module Vmpooler
@@ -82,12 +82,9 @@ module Vmpooler
           return provider_config['machine_type'] if provider_config['machine_type']
         end
 
-        def domain
-          provider_config['domain']
-        end
-
-        def dns_zone_resource_name
-          provider_config['dns_zone_resource_name']
+        def domain(pool_name)
+          dns_plugin_name = pool_config(pool_name)['dns_plugin']
+          dns_config(dns_plugin_name)
         end
 
         # Base methods that are implemented:
@@ -191,7 +188,7 @@ module Vmpooler
             boot: true,
             initialize_params: init_params
           )
-          append_domain = domain || global_config[:config]['domain']
+          append_domain = domain(pool_name)
           fqdn = "#{new_vmname}.#{append_domain}" if append_domain
 
           # Assume all pool config is valid i.e. not missing
@@ -208,9 +205,12 @@ module Vmpooler
           debug_logger('trigger insert_instance')
           result = connection.insert_instance(project, zone(pool_name), client)
           wait_for_operation(project, pool_name, result)
-          created_instance = get_vm(pool_name, new_vmname)
-          dns_setup(created_instance)
-          created_instance
+          get_vm(pool_name, new_vmname)
+        end
+
+        def get_vm_ip_address(vm_name, pool_name)
+          vm_object = get_vm(pool_name, vm_name)
+          vm_object['ip']
         end
 
         # create_disk creates an additional disk for an existing VM. It will name the new
@@ -424,10 +424,8 @@ module Vmpooler
 
           unless deleted
             debug_logger("trigger delete_instance #{vm_name}")
-            vm_hash = get_vm(pool_name, vm_name)
             result = connection.delete_instance(project, zone(pool_name), vm_name)
             wait_for_operation(project, pool_name, result, 10)
-            dns_teardown(vm_hash)
           end
 
           # list and delete any leftover disk, for instance if they were detached from the instance
@@ -462,10 +460,12 @@ module Vmpooler
           true
         end
 
-        def vm_ready?(_pool_name, vm_name)
+        def vm_ready?(pool_name, vm_name)
+          debug_logger('vm_ready?')
           begin
             # TODO: we could use a healthcheck resource attached to instance
-            open_socket(vm_name, domain || global_config[:config]['domain'])
+            domain = domain(pool_name)
+            open_socket(vm_name, domain)
           rescue StandardError => _e
             return false
           end
@@ -497,9 +497,6 @@ module Vmpooler
 
               debug_logger("trigger async delete_instance #{vm.name}")
               result = connection.delete_instance(project, zone, vm.name)
-              vm_pool = vm.labels&.key?('pool') ? vm.labels['pool'] : nil
-              existing_vm = generate_vm_hash(vm, vm_pool)
-              dns_teardown(existing_vm)
               result_list << result
             end
             # now check they are done
@@ -559,16 +556,6 @@ module Vmpooler
         end
 
         # END BASE METHODS
-
-        def dns_setup(created_instance)
-          dns = Vmpooler::PoolManager::CloudDns.new(project, dns_zone_resource_name)
-          dns.dns_create_or_replace(created_instance)
-        end
-
-        def dns_teardown(created_instance)
-          dns = Vmpooler::PoolManager::CloudDns.new(project, dns_zone_resource_name)
-          dns.dns_teardown(created_instance)
-        end
 
         def should_be_ignored(item, allowlist)
           return false if allowlist.nil?
