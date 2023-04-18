@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.0](https://github.com/puppetlabs/vmpooler-provider-gce/tree/1.0.0) (2023-04-19)
+
+[Full Changelog](https://github.com/puppetlabs/vmpooler-provider-gce/compare/0.5.0...1.0.0)
+
+**Breaking changes:**
+
+- \(RE-15124\) Decouple DNS Record Management into DNS Plugins [\#21](https://github.com/puppetlabs/vmpooler-provider-gce/pull/21) ([yachub](https://github.com/yachub))
+
 ## [0.5.0](https://github.com/puppetlabs/vmpooler-provider-gce/tree/0.5.0) (2023-03-06)
 
 [Full Changelog](https://github.com/puppetlabs/vmpooler-provider-gce/compare/0.4.0...0.5.0)
