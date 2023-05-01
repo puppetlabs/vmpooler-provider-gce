@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.1.0](https://github.com/puppetlabs/vmpooler-provider-gce/tree/1.1.0) (2023-05-01)
+
+[Full Changelog](https://github.com/puppetlabs/vmpooler-provider-gce/compare/1.0.0...1.1.0)
+
+**Merged pull requests:**
+
+- Migrate issue management to Jira [\#27](https://github.com/puppetlabs/vmpooler-provider-gce/pull/27) ([yachub](https://github.com/yachub))
+- Bump jruby to 9.4.2.0 [\#26](https://github.com/puppetlabs/vmpooler-provider-gce/pull/26) ([yachub](https://github.com/yachub))
+- Bump rack-test from 2.0.2 to 2.1.0 [\#24](https://github.com/puppetlabs/vmpooler-provider-gce/pull/24) ([dependabot[bot]](https://github.com/apps/dependabot))
+- Update googleauth requirement from \>= 0.16.2, \< 1.3.0 to \>= 0.16.2, \< 1.4.0 [\#18](https://github.com/puppetlabs/vmpooler-provider-gce/pull/18) ([dependabot[bot]](https://github.com/apps/dependabot))
+
 ## [1.0.0](https://github.com/puppetlabs/vmpooler-provider-gce/tree/1.0.0) (2023-04-19)
 
 [Full Changelog](https://github.com/puppetlabs/vmpooler-provider-gce/compare/0.5.0...1.0.0)
