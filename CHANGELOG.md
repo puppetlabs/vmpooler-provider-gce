@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.0](https://github.com/puppetlabs/vmpooler-provider-gce/tree/1.2.0) (2023-08-10)
+
+[Full Changelog](https://github.com/puppetlabs/vmpooler-provider-gce/compare/1.1.0...1.2.0)
+
+**Implemented enhancements:**
+
+- Bump jruby to 9.4.3.0 and update lockfile [\#31](https://github.com/puppetlabs/vmpooler-provider-gce/pull/31) ([yachub](https://github.com/yachub))
+
+**Merged pull requests:**
+
+- Bump thor from 1.2.1 to 1.2.2 [\#29](https://github.com/puppetlabs/vmpooler-provider-gce/pull/29) ([dependabot[bot]](https://github.com/apps/dependabot))
+
 ## [1.1.0](https://github.com/puppetlabs/vmpooler-provider-gce/tree/1.1.0) (2023-05-01)
 
 [Full Changelog](https://github.com/puppetlabs/vmpooler-provider-gce/compare/1.0.0...1.1.0)
