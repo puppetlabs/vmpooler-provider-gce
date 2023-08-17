@@ -460,15 +460,17 @@ module Vmpooler
           true
         end
 
-        def vm_ready?(pool_name, vm_name)
+        def vm_ready?(pool_name, vm_name, redis)
           debug_logger('vm_ready?')
           begin
             # TODO: we could use a healthcheck resource attached to instance
             domain = domain(pool_name)
             open_socket(vm_name, domain)
-          rescue StandardError => _e
+          rescue StandardError => e
+            redis.hset("vmpooler__vm__#{vm_name}", 'open_socket_error', e.to_s)
             return false
           end
+          redis.hdel("vmpooler__vm__#{vm_name}", 'open_socket_error')
           true
         end
 
