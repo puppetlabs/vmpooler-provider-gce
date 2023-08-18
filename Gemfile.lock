@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    vmpooler-provider-gce (1.2.0)
+    vmpooler-provider-gce (1.2.1)
       google-apis-compute_v1 (~> 0.14)
       googleauth (>= 0.16.2, < 1.4.0)
       vmpooler (~> 3.0)

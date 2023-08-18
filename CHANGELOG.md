@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.1](https://github.com/puppetlabs/vmpooler-provider-gce/tree/1.2.1) (2023-08-18)
+
+[Full Changelog](https://github.com/puppetlabs/vmpooler-provider-gce/compare/1.2.0...1.2.1)
+
+**Implemented enhancements:**
+
+- \(POD-10\) Log reason for failed VM checks. [\#33](https://github.com/puppetlabs/vmpooler-provider-gce/pull/33) ([isaac-hammes](https://github.com/isaac-hammes))
+
 ## [1.2.0](https://github.com/puppetlabs/vmpooler-provider-gce/tree/1.2.0) (2023-08-10)
 
 [Full Changelog](https://github.com/puppetlabs/vmpooler-provider-gce/compare/1.1.0...1.2.0)
